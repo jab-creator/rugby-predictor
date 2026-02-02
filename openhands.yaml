@@ -1,0 +1,80 @@
+project:
+  name: six-nations-predictor
+  description: >
+    Six Nations-only predictor app using Firebase (Auth, Firestore, Functions, Scheduler, Hosting).
+    Predictions are winner + margin. Scoring/locking/visibility rules are defined in docs/* and are locked.
+
+workflow:
+  style: iterative
+  commit_strategy:
+    enabled: true
+    message_prefix: "chore: "
+    max_files_per_commit: 20
+
+guardrails:
+  locked_files:
+    - "docs/SCORING.md"
+    - "docs/PRODUCT.md"
+    - "docs/DATA_MODEL.md"
+    - "docs/SECURITY_RULES.md"
+    - "docs/BUILD_PLAN.md"
+  require_ack_locked_files: true
+  do_not_change_locked_decisions:
+    - "Six Nations only (not generic rugby)."
+    - "Pick format is winner + margin (margin 1–99)."
+    - "Autosaved complete pick counts as Picked."
+    - "Locking is per-match and irreversible."
+    - "Before kickoff: everyone can see status (No pick / Picked / Locked)."
+    - "Before kickoff: pick details visible only if both users locked that match."
+    - "After kickoff: everyone can see everyone’s picks for that match."
+    - "Scoring rules are exactly as in docs/SCORING.md (including draw handling and closest split-floor)."
+
+security:
+  secrets_policy:
+    never_read_paths:
+      - ".env"
+      - ".env.*"
+      - "**/*.pem"
+      - "**/*.key"
+      - "**/*serviceAccount*.json"
+      - "**/*firebase-adminsdk*.json"
+    never_print_patterns:
+      - "BEGIN PRIVATE KEY"
+      - "PRIVATE KEY"
+      - "FIREBASE_PRIVATE_KEY"
+      - "GOOGLE_APPLICATION_CREDENTIALS"
+  safe_defaults:
+    - "Do not add real secrets to the repo."
+    - "Use .env.example for placeholders only."
+    - "Prefer Firebase CLI login over service-account JSON in local dev."
+
+planning:
+  first_steps:
+    - "Read docs/BUILD_PLAN.md and propose the next milestone."
+    - "Summarize the locked decisions you will follow."
+    - "List files you plan to create/modify before doing so."
+    - "Implement one milestone at a time and provide how to test."
+
+preferences:
+  stack:
+    backend: firebase
+    database: firestore
+    auth: firebase-auth
+    functions: firebase-functions
+    hosting: firebase-hosting
+  frontend:
+    preferred: nextjs
+    acceptable:
+      - react-spa
+  coding_conventions:
+    typescript: true
+    linting: true
+    formatting: prettier
+  testing:
+    - "Use Firebase emulators for local development."
+    - "Prefer small unit tests for scoring logic (pure functions)."
+
+notes:
+  - "Keep leaderboards precomputed in Firestore; do not compute totals client-side."
+  - "Split picks into picks_status (public to pool members) and picks_detail (restricted)."
+  - "All timestamps are stored in UTC; UI displays in local timezone."
