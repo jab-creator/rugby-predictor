@@ -180,6 +180,167 @@ export const SIX_NATIONS_2025_FIXTURES: FixtureData[] = [
 ];
 
 /**
+ * Six Nations 2026 Season Data
+ */
+export const SIX_NATIONS_2026: SeasonData = {
+  id: 'six-nations-2026',
+  name: 'Six Nations 2026',
+  startsAt: new Date('2026-02-05T00:00:00Z'),
+  endsAt: new Date('2026-03-14T23:59:59Z'),
+};
+
+/**
+ * Six Nations 2026 Fixtures
+ * Each team plays every other team once (5 rounds, 3 matches per round)
+ */
+export const SIX_NATIONS_2026_FIXTURES: FixtureData[] = [
+  // ROUND 1
+  {
+    round: 1,
+    kickoffAt: new Date('2026-02-05T20:10:00Z'), // Thursday 5 Feb, 8:10 PM GMT
+    homeTeamId: 'FRA',
+    awayTeamId: 'IRE',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 1,
+    kickoffAt: new Date('2026-02-07T14:10:00Z'), // Saturday 7 Feb, 2:10 PM GMT
+    homeTeamId: 'ITA',
+    awayTeamId: 'SCO',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 1,
+    kickoffAt: new Date('2026-02-07T16:40:00Z'), // Saturday 7 Feb, 4:40 PM GMT
+    homeTeamId: 'ENG',
+    awayTeamId: 'WAL',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+
+  // ROUND 2
+  {
+    round: 2,
+    kickoffAt: new Date('2026-02-14T14:10:00Z'), // Saturday 14 Feb, 2:10 PM GMT
+    homeTeamId: 'IRE',
+    awayTeamId: 'ITA',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 2,
+    kickoffAt: new Date('2026-02-14T16:40:00Z'), // Saturday 14 Feb, 4:40 PM GMT
+    homeTeamId: 'SCO',
+    awayTeamId: 'ENG',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 2,
+    kickoffAt: new Date('2026-02-15T15:10:00Z'), // Sunday 15 Feb, 3:10 PM GMT
+    homeTeamId: 'WAL',
+    awayTeamId: 'FRA',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+
+  // ROUND 3
+  {
+    round: 3,
+    kickoffAt: new Date('2026-02-21T14:10:00Z'), // Saturday 21 Feb, 2:10 PM GMT
+    homeTeamId: 'ENG',
+    awayTeamId: 'IRE',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 3,
+    kickoffAt: new Date('2026-02-21T16:40:00Z'), // Saturday 21 Feb, 4:40 PM GMT
+    homeTeamId: 'WAL',
+    awayTeamId: 'SCO',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 3,
+    kickoffAt: new Date('2026-02-22T15:10:00Z'), // Sunday 22 Feb, 3:10 PM GMT
+    homeTeamId: 'FRA',
+    awayTeamId: 'ITA',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+
+  // ROUND 4
+  {
+    round: 4,
+    kickoffAt: new Date('2026-03-06T20:10:00Z'), // Friday 6 Mar, 8:10 PM GMT
+    homeTeamId: 'IRE',
+    awayTeamId: 'WAL',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 4,
+    kickoffAt: new Date('2026-03-07T14:10:00Z'), // Saturday 7 Mar, 2:10 PM GMT
+    homeTeamId: 'SCO',
+    awayTeamId: 'FRA',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 4,
+    kickoffAt: new Date('2026-03-07T16:40:00Z'), // Saturday 7 Mar, 4:40 PM GMT
+    homeTeamId: 'ITA',
+    awayTeamId: 'ENG',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+
+  // ROUND 5
+  {
+    round: 5,
+    kickoffAt: new Date('2026-03-14T14:10:00Z'), // Saturday 14 Mar, 2:10 PM GMT
+    homeTeamId: 'IRE',
+    awayTeamId: 'SCO',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 5,
+    kickoffAt: new Date('2026-03-14T16:40:00Z'), // Saturday 14 Mar, 4:40 PM GMT
+    homeTeamId: 'WAL',
+    awayTeamId: 'ITA',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+  {
+    round: 5,
+    kickoffAt: new Date('2026-03-14T20:10:00Z'), // Saturday 14 Mar, 8:10 PM GMT
+    homeTeamId: 'FRA',
+    awayTeamId: 'ENG',
+    status: 'scheduled',
+    homeScore: null,
+    awayScore: null,
+  },
+];
+
+/**
  * Team display names
  */
 export const TEAM_NAMES: Record<TeamId, string> = {

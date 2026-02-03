@@ -9,6 +9,8 @@ import { db } from './firebase';
 import { 
   SIX_NATIONS_2025, 
   SIX_NATIONS_2025_FIXTURES,
+  SIX_NATIONS_2026,
+  SIX_NATIONS_2026_FIXTURES,
   SeasonData,
   FixtureData 
 } from './fixtures';
@@ -101,4 +103,62 @@ export async function seedSixNations2025(): Promise<{ success: boolean; message:
       message: `Failed to seed: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
   }
+}
+
+/**
+ * Seed Six Nations 2026 into Firestore
+ */
+export async function seedSixNations2026(): Promise<{ success: boolean; message: string }> {
+  try {
+    // Check if already seeded
+    const alreadySeeded = await isSeasonSeeded(SIX_NATIONS_2026.id);
+    
+    if (alreadySeeded) {
+      return {
+        success: false,
+        message: 'Six Nations 2026 already seeded. Delete existing fixtures to re-seed.',
+      };
+    }
+    
+    // Seed season
+    await seedSeason(SIX_NATIONS_2026);
+    
+    // Seed fixtures
+    await seedFixtures(SIX_NATIONS_2026.id, SIX_NATIONS_2026_FIXTURES);
+    
+    return {
+      success: true,
+      message: `Successfully seeded Six Nations 2026 with ${SIX_NATIONS_2026_FIXTURES.length} fixtures`,
+    };
+  } catch (error) {
+    console.error('Error seeding Six Nations 2026:', error);
+    return {
+      success: false,
+      message: `Failed to seed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
+
+/**
+ * Seed all Six Nations seasons into Firestore
+ */
+export async function seedAllSeasons(): Promise<{ success: boolean; message: string; details: any[] }> {
+  const results = [];
+  
+  // Seed 2025
+  const result2025 = await seedSixNations2025();
+  results.push({ season: '2025', ...result2025 });
+  
+  // Seed 2026
+  const result2026 = await seedSixNations2026();
+  results.push({ season: '2026', ...result2026 });
+  
+  const allSuccessful = results.every(r => r.success);
+  const successCount = results.filter(r => r.success).length;
+  
+  return {
+    success: allSuccessful,
+    message: `Seeded ${successCount} of ${results.length} seasons`,
+    details: results,
+  };
 }
