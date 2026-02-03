@@ -21,8 +21,8 @@ export const db = getFirestore(app);
 export const functions = getFunctions(app);
 
 // Connect to emulators in development
-// Only run in browser and when emulators are enabled
-if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true') {
+// Enable for both client and server when emulators are enabled
+if (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true') {
   // These functions will throw if already connected, so we wrap in try-catch
   try {
     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });

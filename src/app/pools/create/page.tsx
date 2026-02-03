@@ -48,9 +48,10 @@ export default function CreatePoolPage() {
       );
       
       router.push(`/pools/${poolId}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating pool:', error);
-      setError('Failed to create pool. Please try again.');
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      setError(`Failed to create pool: ${errorMessage}`);
       setCreating(false);
     }
   };
