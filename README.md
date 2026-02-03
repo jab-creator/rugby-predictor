@@ -122,4 +122,15 @@ rugby-predictor/
 - [x] Kickoff times in local timezone
 - [x] No persistence yet (autosave in M3)
 
-**Next:** Milestone 3 — Autosave picks + status dots
+#### Milestone 3: ✅ Complete (Autosave Picks + Status Dots)
+- [x] Dual-doc pattern (picks_detail + picks_status)
+- [x] Autosave picks (500ms debounced)
+- [x] Batched writes to Firestore
+- [x] Load existing picks on page load
+- [x] Real-time status listeners
+- [x] Status dots: No pick / Picked / Locked
+- [x] Member status list per match
+- [x] Pick details hidden from others
+- [x] Visual save feedback
+
+**Next:** Milestone 4 — Lock picks + kickoff enforcement
