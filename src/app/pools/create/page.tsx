@@ -8,7 +8,6 @@ import Header from '@/components/Header';
 
 // Hardcoded season options for Milestone 1
 const SEASONS = [
-  { id: 'six-nations-2025', name: 'Six Nations 2025' },
   { id: 'six-nations-2026', name: 'Six Nations 2026' },
 ];
 
