@@ -1,6 +1,7 @@
 export const PROJECT_ID = 'demo-six-nations-predictor';
 export const AUTH_EMULATOR_URL = 'http://localhost:9099';
 export const FIRESTORE_EMULATOR_URL = 'http://localhost:8080';
+export const FUNCTIONS_EMULATOR_URL = 'http://localhost:5001';
 export const APP_URL = 'http://localhost:3000';
 
 // The Auth Emulator accepts any value for the API key
@@ -11,7 +12,13 @@ export const FAKE_API_KEY = 'fake-api-key';
 export const FIREBASE_API_KEY =
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? FAKE_API_KEY;
 
+// Real Six Nations 2026 season — used for read-only tests (round view etc.)
 export const SEASON_ID = 'six-nations-2026';
+
+// Future-dated test season — used for any test that writes picks.
+// Security rules require kickoffAt > request.time, so tests that save picks
+// must use fixtures whose kickoff times are in the far future.
+export const TEST_SEASON_ID = 'six-nations-test';
 
 export const TEST_USER = {
   email: 'playwright-test@example.com',

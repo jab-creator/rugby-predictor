@@ -203,19 +203,91 @@ export async function createUserProfile(
 }
 
 /**
- * Write a pick_status document directly (for multi-user status dot tests).
+ * Write a pick_status document directly.
+ * NOTE: security rules require request.auth — this only works when called from
+ * an admin context or when the emulator rules allow unauthenticated writes.
+ * For tests that need this, prefer making picks via the browser UI instead.
  */
 export async function createPickStatus(
   poolId: string,
   matchId: string,
   userId: string,
   isComplete: boolean,
+  kickoffAt: Date = new Date('2099-01-05T15:00:00Z'),
 ): Promise<void> {
   const docId = `${matchId}_${userId}`;
   await firestoreSet(`pools/${poolId}/picks_status/${docId}`, {
     matchId,
     userId,
     isComplete,
-    updatedAt: new Date().toISOString(),
+    lockedAt: null,
+    finalizedAt: null,
+    kickoffAt,
+    updatedAt: new Date(),
   });
+}
+
+/**
+ * Read a picks_status document (reads are open — no auth required).
+ */
+export async function getPickStatus(
+  poolId: string,
+  matchId: string,
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  return firestoreGet(`pools/${poolId}/picks_status/${matchId}_${userId}`);
+}
+
+/**
+ * Seed a future-dated test season so pick writes succeed in tests.
+ *
+ * Security rules require kickoffAt > request.time for picks writes.
+ * Six Nations 2026 fixtures are in the past so tests that save picks must
+ * use this season instead of 'six-nations-2026'.
+ *
+ * Seasons have open rules (allow read, write: if true) so no auth needed.
+ */
+export async function seedTestSeason(seasonId: string = 'six-nations-test'): Promise<void> {
+  await firestoreSet(`seasons/${seasonId}`, {
+    name: 'Six Nations Test (Future)',
+    startsAt: new Date('2099-01-01T00:00:00Z'),
+    endsAt: new Date('2099-03-31T23:59:59Z'),
+  });
+
+  const fixtures = [
+    // Round 1
+    { round: 1, home: 'FRA', away: 'IRE', kickoffAt: new Date('2099-01-05T15:00:00Z') },
+    { round: 1, home: 'ITA', away: 'SCO', kickoffAt: new Date('2099-01-05T16:30:00Z') },
+    { round: 1, home: 'ENG', away: 'WAL', kickoffAt: new Date('2099-01-05T18:00:00Z') },
+    // Round 2
+    { round: 2, home: 'SCO', away: 'WAL', kickoffAt: new Date('2099-01-12T15:00:00Z') },
+    { round: 2, home: 'IRE', away: 'ITA', kickoffAt: new Date('2099-01-12T16:30:00Z') },
+    { round: 2, home: 'FRA', away: 'ENG', kickoffAt: new Date('2099-01-12T18:00:00Z') },
+    // Round 3
+    { round: 3, home: 'WAL', away: 'ENG', kickoffAt: new Date('2099-01-19T15:00:00Z') },
+    { round: 3, home: 'ITA', away: 'FRA', kickoffAt: new Date('2099-01-19T16:30:00Z') },
+    { round: 3, home: 'SCO', away: 'IRE', kickoffAt: new Date('2099-01-19T18:00:00Z') },
+    // Round 4
+    { round: 4, home: 'IRE', away: 'WAL', kickoffAt: new Date('2099-01-26T15:00:00Z') },
+    { round: 4, home: 'ENG', away: 'SCO', kickoffAt: new Date('2099-01-26T16:30:00Z') },
+    { round: 4, home: 'FRA', away: 'ITA', kickoffAt: new Date('2099-01-26T18:00:00Z') },
+    // Round 5
+    { round: 5, home: 'WAL', away: 'FRA', kickoffAt: new Date('2099-02-02T15:00:00Z') },
+    { round: 5, home: 'SCO', away: 'ENG', kickoffAt: new Date('2099-02-02T16:30:00Z') },
+    { round: 5, home: 'ITA', away: 'IRE', kickoffAt: new Date('2099-02-02T18:00:00Z') },
+  ];
+
+  for (const f of fixtures) {
+    const matchId = `${seasonId}-r${f.round}-${f.home}-${f.away}`;
+    await firestoreSet(`seasons/${seasonId}/matches/${matchId}`, {
+      round: f.round,
+      kickoffAt: f.kickoffAt,
+      homeTeamId: f.home,
+      awayTeamId: f.away,
+      status: 'scheduled',
+      homeScore: null,
+      awayScore: null,
+      updatedAt: new Date(),
+    });
+  }
 }

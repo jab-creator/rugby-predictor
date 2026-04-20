@@ -10,7 +10,7 @@
 
 import { test, expect } from '@playwright/test';
 import { createTestPool, deletePool } from './helpers/firestore';
-import { TEST_USER, SEASON_ID } from './helpers/constants';
+import { TEST_USER, TEST_SEASON_ID } from './helpers/constants';
 
 async function getCurrentUid(page: import('@playwright/test').Page): Promise<string> {
   return page.evaluate(() => {
@@ -27,7 +27,7 @@ test.describe('MatchCard — winner selection', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     const uid = await getCurrentUid(page);
-    const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Pool', SEASON_ID);
+    const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     await page.goto(`/pools/${poolId}/round/1`);
     await page.waitForLoadState('networkidle');
@@ -84,7 +84,7 @@ test.describe('MatchCard — margin input', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     const uid = await getCurrentUid(page);
-    const pool = await createTestPool(uid, TEST_USER.displayName, 'Margin Pool', SEASON_ID);
+    const pool = await createTestPool(uid, TEST_USER.displayName, 'Margin Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     await page.goto(`/pools/${poolId}/round/1`);
     await page.waitForLoadState('networkidle');
@@ -141,7 +141,7 @@ test.describe('MatchCard — autosave', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     const uid = await getCurrentUid(page);
-    const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Debounce Pool', SEASON_ID);
+    const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Debounce Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     await page.goto(`/pools/${poolId}/round/1`);
     await page.waitForLoadState('networkidle');

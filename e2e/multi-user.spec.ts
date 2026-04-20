@@ -7,9 +7,9 @@
  */
 
 import { test, expect, Browser } from '@playwright/test';
-import { createTestPool, deletePool, addPoolMember, createPickStatus } from './helpers/firestore';
+import { createTestPool, deletePool, addPoolMember } from './helpers/firestore';
 import { createTestUser, injectAuthState } from './helpers/auth';
-import { TEST_USER, TEST_USER_2, SEASON_ID } from './helpers/constants';
+import { TEST_USER, TEST_USER_2, TEST_SEASON_ID } from './helpers/constants';
 
 async function getCurrentUid(page: import('@playwright/test').Page): Promise<string> {
   return page.evaluate(() => {
@@ -43,7 +43,7 @@ test.describe('Multi-user — pool membership', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     user1Uid = await getCurrentUid(page);
-    const pool = await createTestPool(user1Uid, TEST_USER.displayName, 'Multi-User Pool', SEASON_ID);
+    const pool = await createTestPool(user1Uid, TEST_USER.displayName, 'Multi-User Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     joinCode = pool.joinCode;
   });
@@ -125,7 +125,7 @@ test.describe('Multi-user — pick status dots', () => {
     const user2 = await createTestUser(TEST_USER_2.email, TEST_USER_2.password, TEST_USER_2.displayName);
     user2Uid = user2.uid;
 
-    const pool = await createTestPool(user1Uid, TEST_USER.displayName, 'Status Dot Pool', SEASON_ID);
+    const pool = await createTestPool(user1Uid, TEST_USER.displayName, 'Status Dot Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     await addPoolMember(poolId, user2Uid, TEST_USER_2.displayName);
   });

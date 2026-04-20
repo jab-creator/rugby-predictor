@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { getPool, getMatchesForRound, getPoolMembers } from '@/lib/pools';
 import { subscribeToMatchesStatuses } from '@/lib/picks';
+import { lockPick, lockAllCompletedPicks, getLockableMatchIds } from '@/lib/locks';
 import { Pool, Match, PoolMember, PickStatus } from '@/lib/types';
 import Header from '@/components/Header';
 import MatchCard from '@/components/MatchCard';
@@ -29,6 +30,8 @@ export default function RoundPage() {
   const [matchStatuses, setMatchStatuses] = useState<Map<string, Map<string, PickStatus>>>(new Map());
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
+  const [bulkLocking, setBulkLocking] = useState(false);
+  const [bulkLockResult, setBulkLockResult] = useState<string>('');
 
   useEffect(() => {
     if (!loading && !user) {
@@ -73,28 +76,53 @@ export default function RoundPage() {
 
       setPool(poolData);
 
-      // Load matches for this round
       const matchesData = await getMatchesForRound(poolData.seasonId, round);
-      
-      // Sort by kickoff time
       matchesData.sort((a, b) => {
-        const timeA = a.match.kickoffAt.toDate ? a.match.kickoffAt.toDate() : new Date(a.match.kickoffAt);
-        const timeB = b.match.kickoffAt.toDate ? b.match.kickoffAt.toDate() : new Date(b.match.kickoffAt);
+        const timeA = a.match.kickoffAt.toDate ? a.match.kickoffAt.toDate() : new Date(a.match.kickoffAt as any);
+        const timeB = b.match.kickoffAt.toDate ? b.match.kickoffAt.toDate() : new Date(b.match.kickoffAt as any);
         return timeA.getTime() - timeB.getTime();
       });
 
       setMatches(matchesData);
 
-      // Load pool members
       const membersData = await getPoolMembers(poolId);
       setMembers(membersData);
-    } catch (error) {
-      console.error('Error loading round:', error);
+    } catch (err) {
+      console.error('Error loading round:', err);
       setError('Failed to load round data');
     } finally {
       setLoadingData(false);
     }
   };
+
+  const handleLockMatch = async (matchId: string) => {
+    await lockPick(poolId, matchId);
+  };
+
+  const handleLockAll = async () => {
+    if (!user || bulkLocking) return;
+    setBulkLocking(true);
+    setBulkLockResult('');
+
+    const eligibleIds = getLockableMatchIds(matchStatuses, user.uid);
+    if (eligibleIds.length === 0) {
+      setBulkLockResult('No completed, unlocked picks to lock.');
+      setBulkLocking(false);
+      return;
+    }
+
+    const { locked, failed } = await lockAllCompletedPicks(poolId, eligibleIds);
+    setBulkLockResult(
+      failed === 0
+        ? `Locked ${locked} pick${locked !== 1 ? 's' : ''}.`
+        : `Locked ${locked}, failed ${failed}. Check picks before kickoff.`
+    );
+    setBulkLocking(false);
+  };
+
+  const lockableCount = user
+    ? getLockableMatchIds(matchStatuses, user.uid).length
+    : 0;
 
   if (loading || loadingData) {
     return (
@@ -177,6 +205,24 @@ export default function RoundPage() {
           </div>
         )}
 
+        {/* Bulk lock action */}
+        {matches.length > 0 && lockableCount > 0 && (
+          <div className="mb-6 flex items-center gap-4 flex-wrap">
+            <button
+              onClick={handleLockAll}
+              disabled={bulkLocking}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm transition-colors disabled:opacity-60 disabled:cursor-wait"
+            >
+              {bulkLocking
+                ? 'Locking...'
+                : `🔒 Lock all completed (${lockableCount})`}
+            </button>
+            {bulkLockResult && (
+              <span className="text-sm text-gray-600 dark:text-gray-400">{bulkLockResult}</span>
+            )}
+          </div>
+        )}
+
         {/* Matches */}
         {matches.length === 0 ? (
           <div className="text-center py-16">
@@ -199,13 +245,19 @@ export default function RoundPage() {
           <div className="space-y-8">
             {matches.map(({ id, match }) => {
               const statuses = matchStatuses.get(id) || new Map();
-              
+              const userStatus = user ? statuses.get(user.uid) : undefined;
+              const lockedAt = userStatus?.lockedAt ?? null;
+
               return (
                 <div key={id} className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                  {/* Match Card */}
-                  <MatchCard matchId={id} match={match} poolId={poolId} />
-                  
-                  {/* Member Status Section */}
+                  <MatchCard
+                    matchId={id}
+                    match={match}
+                    poolId={poolId}
+                    lockedAt={lockedAt}
+                    onLock={() => handleLockMatch(id)}
+                  />
+
                   {members.length > 1 && (
                     <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -224,8 +276,8 @@ export default function RoundPage() {
         {matches.length > 0 && (
           <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
             <p className="text-sm text-blue-800 dark:text-blue-200">
-              <strong>💾 Autosave enabled:</strong> Your picks are automatically saved as you make them. 
-              Status updates in real-time across all pool members.
+              <strong>💾 Autosave enabled:</strong> Your picks are automatically saved as you make them.
+              Lock your pick before kickoff to make it final — locking is irreversible.
             </p>
           </div>
         )}

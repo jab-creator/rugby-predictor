@@ -151,4 +151,15 @@ rugby-predictor/
 - [x] Pick details hidden from others
 - [x] Visual save feedback
 
-**Next:** Milestone 4 — Lock picks + kickoff enforcement
+#### Milestone 4: ✅ Complete (Per-match Irreversible Locking)
+- [x] `lockPick` Cloud Function (callable) — verifies membership, kickoff > now, completeness; sets `lockedAt` atomically
+- [x] `autoLockMatch` Cloud Function (HTTPS) — Cloud Tasks target; locks all complete picks for a match at kickoff
+- [x] `onMatchWrite` Firestore trigger — enqueues a named Cloud Task (`autolock-{matchId}`) at `kickoffAt`; idempotent re-enqueue when kickoff changes
+- [x] Lock button per match (only shown when pick is complete and unlocked)
+- [x] "Lock all completed (N)" bulk action on round page
+- [x] Locked picks render read-only (inputs disabled, blue locked banner)
+- [x] `lockedAt` denormalized into picks docs; security rules enforce before-kickoff writes only
+- [x] Security rules: client can never write `lockedAt != null`; writes denied once doc is locked or past kickoff
+- [x] Testing: `autoLockMatch` accepts direct POST in emulator (`curl http://localhost:5001/.../autoLockMatch`)
+
+**Next:** Milestone 5 — Full security rules + visibility (locked-both reveal, post-kickoff reveal)

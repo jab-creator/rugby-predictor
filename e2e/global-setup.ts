@@ -8,7 +8,7 @@
  * Requires Next.js dev server to be running: `npm run dev`
  */
 
-import { clearFirestore } from './helpers/firestore';
+import { clearFirestore, seedTestSeason } from './helpers/firestore';
 import { APP_URL } from './helpers/constants';
 
 export default async function globalSetup(): Promise<void> {
@@ -29,6 +29,13 @@ export default async function globalSetup(): Promise<void> {
   if (!data.success) {
     throw new Error(`[globalSetup] Seeding failed: ${data.message}`);
   }
+
+  // Seed a future-dated test season for tests that write picks.
+  // The 2026 fixtures are in the past; security rules require kickoffAt > now
+  // for all picks writes, so tests that save picks use this season instead.
+  console.log('[globalSetup] Seeding future-dated test season...');
+  await seedTestSeason();
+  console.log('[globalSetup] Test season seeded.');
 
   console.log('[globalSetup] Done.\n');
 }

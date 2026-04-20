@@ -55,6 +55,7 @@ export interface PickStatus {
   isComplete: boolean;
   lockedAt: Timestamp | null;
   finalizedAt: Timestamp | null;
+  kickoffAt: Timestamp;
   updatedAt: Timestamp;
 }
 
@@ -63,6 +64,7 @@ export interface PickDetail {
   userId: string;
   pickedWinnerTeamId: TeamId | null;
   pickedMargin: number | null; // 1-99
+  kickoffAt: Timestamp;
   updatedAt: Timestamp;
   // Scoring fields (written by server after match final)
   winnerCorrect?: boolean;

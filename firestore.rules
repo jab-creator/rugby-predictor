@@ -1,13 +1,92 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // MILESTONE 0: Basic emulator-friendly rules
-    // TODO: Implement proper security rules per docs/SECURITY_RULES.md in Milestone 5
-    
-    // Allow all read/write during development (emulator-only)
-    // This allows seeding and testing without authentication
-    match /{document=**} {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // --- picks_status helpers ---
+
+    // Client must never set lockedAt to a non-null value.
+    // The server (Admin SDK, bypasses rules) is the only writer of lockedAt.
+    function clientLockedAtIsNull() {
+      return request.resource.data.lockedAt == null;
+    }
+
+    // Deny writes if the existing doc is already locked.
+    function isNotLocked() {
+      return resource == null || resource.data.lockedAt == null;
+    }
+
+    // Deny writes at or after kickoff.
+    // kickoffAt is denormalized into the picks doc on first save.
+    function isBeforeKickoff() {
+      let kickoff = resource == null
+        ? request.resource.data.kickoffAt
+        : resource.data.kickoffAt;
+      return request.time < kickoff;
+    }
+
+    // ---- Seasons / Matches (global fixtures) ----
+    // Readable by all; writable only by Admin SDK (seed script runs client-side
+    // in dev, so we keep open for now — full restriction in M5).
+    match /seasons/{document=**} {
+      allow read: if true;
+      allow write: if true; // Dev/seed only — tighten in M5
+    }
+
+    // ---- Pools ----
+    // Full membership rules come in M5; keep open for creation and joining.
+    match /pools/{poolId} {
       allow read, write: if true;
+    }
+
+    match /pools/{poolId}/members/{userId} {
+      allow read, write: if true;
+    }
+
+    // ---- picks_status ----
+    // Readable by any authenticated user (pool member check in M5).
+    // Writes: owner only, before kickoff, not already locked, lockedAt must be null.
+    match /pools/{poolId}/picks_status/{docId} {
+      allow read: if true;
+      allow write: if
+        isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        clientLockedAtIsNull() &&
+        isNotLocked() &&
+        isBeforeKickoff();
+    }
+
+    // ---- picks_detail ----
+    // Same write constraints as picks_status.
+    // Read visibility (locked-both / after-kickoff rules) deferred to M5.
+    match /pools/{poolId}/picks_detail/{docId} {
+      allow read: if true;
+      allow write: if
+        isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        isNotLocked() &&
+        isBeforeKickoff() &&
+        request.resource.data.pickedMargin >= 1 &&
+        request.resource.data.pickedMargin <= 99;
+    }
+
+    // ---- Server-only collections (leaderboard, scoring) ----
+    match /pools/{poolId}/leaderboard/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /pools/{poolId}/rounds/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /pools/{poolId}/scoring_runs/{document=**} {
+      allow read: if true;
+      allow write: if false;
     }
   }
 }

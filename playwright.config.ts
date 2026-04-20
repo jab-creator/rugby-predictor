@@ -56,6 +56,7 @@ export default defineConfig({
         '**/round.spec.ts',
         '**/autosave.spec.ts',
         '**/multi-user.spec.ts',
+        '**/locking.spec.ts',
       ],
       dependencies: ['setup'],
       use: {

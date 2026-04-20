@@ -22,7 +22,8 @@ export async function savePick(
   matchId: string,
   userId: string,
   pickedWinnerTeamId: TeamId,
-  pickedMargin: number
+  pickedMargin: number,
+  kickoffAt: Timestamp
 ): Promise<void> {
   if (pickedMargin < 1 || pickedMargin > 99) {
     throw new Error('Margin must be between 1 and 99');
@@ -30,39 +31,30 @@ export async function savePick(
 
   const batch = writeBatch(db);
 
-  // Document IDs follow pattern: {matchId}_{userId}
-  const statusDocId = `${matchId}_${userId}`;
-  const detailDocId = `${matchId}_${userId}`;
+  const docId = `${matchId}_${userId}`;
+  const statusRef = doc(db, 'pools', poolId, 'picks_status', docId);
+  const detailRef = doc(db, 'pools', poolId, 'picks_detail', docId);
 
-  const statusRef = doc(db, 'pools', poolId, 'picks_status', statusDocId);
-  const detailRef = doc(db, 'pools', poolId, 'picks_detail', detailDocId);
-
-  // Pick is complete if both winner and margin are set
-  const isComplete = true;
-
-  // Write picks_status
-  const statusData: Omit<PickStatus, 'updatedAt'> & { updatedAt: any } = {
+  // lockedAt is intentionally excluded — only the server (Admin SDK) writes it.
+  // Security rules enforce that clients cannot set lockedAt to a non-null value.
+  batch.set(statusRef, {
     matchId,
     userId,
-    isComplete,
-    lockedAt: null, // Locking in Milestone 4
-    finalizedAt: null, // Server-only field for post-kickoff
+    isComplete: true,
+    lockedAt: null,
+    finalizedAt: null,
+    kickoffAt,
     updatedAt: serverTimestamp(),
-  };
+  } satisfies Omit<PickStatus, 'updatedAt'> & { updatedAt: unknown });
 
-  batch.set(statusRef, statusData);
-
-  // Write picks_detail
-  const detailData: Omit<PickDetail, 'updatedAt'> & { updatedAt: any } = {
+  batch.set(detailRef, {
     matchId,
     userId,
     pickedWinnerTeamId,
     pickedMargin,
+    kickoffAt,
     updatedAt: serverTimestamp(),
-    // Scoring fields (written by server after match final - Milestone 6)
-  };
-
-  batch.set(detailRef, detailData);
+  } satisfies Omit<PickDetail, 'updatedAt'> & { updatedAt: unknown });
 
   await batch.commit();
 }
@@ -199,32 +191,31 @@ export function subscribeToMatchesStatuses(
 export async function clearPick(
   poolId: string,
   matchId: string,
-  userId: string
+  userId: string,
+  kickoffAt: Timestamp
 ): Promise<void> {
   const batch = writeBatch(db);
 
-  const statusDocId = `${matchId}_${userId}`;
-  const detailDocId = `${matchId}_${userId}`;
+  const docId = `${matchId}_${userId}`;
+  const statusRef = doc(db, 'pools', poolId, 'picks_status', docId);
+  const detailRef = doc(db, 'pools', poolId, 'picks_detail', docId);
 
-  const statusRef = doc(db, 'pools', poolId, 'picks_status', statusDocId);
-  const detailRef = doc(db, 'pools', poolId, 'picks_detail', detailDocId);
-
-  // Update status to incomplete
   batch.set(statusRef, {
     matchId,
     userId,
     isComplete: false,
     lockedAt: null,
     finalizedAt: null,
+    kickoffAt,
     updatedAt: serverTimestamp(),
   });
 
-  // Clear detail
   batch.set(detailRef, {
     matchId,
     userId,
     pickedWinnerTeamId: null,
     pickedMargin: null,
+    kickoffAt,
     updatedAt: serverTimestamp(),
   });
 
