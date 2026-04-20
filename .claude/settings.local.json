@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "Bash(node --version)",
+      "Bash(npm --version)",
+      "Bash(ls /c/dev/rugby-predictor/.claude/worktrees/brave-wilson/.env*)",
+      "Bash(npm install --save-dev @playwright/test)",
+      "Bash(npx playwright install chromium)",
+      "Bash(npx tsc --noEmit --project tsconfig.json)",
+      "Bash(npx tsc --noEmit --project tsconfig.json --allowImportingTsExtensions)"
+    ]
+  }
+}

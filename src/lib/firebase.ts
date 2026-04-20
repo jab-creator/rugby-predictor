@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
@@ -21,8 +21,8 @@ export const db = getFirestore(app);
 export const functions = getFunctions(app);
 
 // Connect to emulators in development
-// Only run in browser and when emulators are enabled
-if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true') {
+// Enable for both client and server when emulators are enabled
+if (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true') {
   // These functions will throw if already connected, so we wrap in try-catch
   try {
     connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
@@ -40,6 +40,15 @@ if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_USE_FIREBASE_EMULAT
     connectFunctionsEmulator(functions, 'localhost', 5001);
   } catch (error) {
     // Already connected, ignore
+  }
+
+  // Force localStorage persistence so Playwright's storageState can capture
+  // the auth session. Without this, Firebase v9 defaults to IndexedDB which
+  // Playwright cannot save/restore via storageState.
+  if (typeof window !== 'undefined') {
+    setPersistence(auth, browserLocalPersistence).catch(() => {
+      // Ignore — e.g. persistence already set
+    });
   }
 }
 

@@ -1,19 +1,21 @@
 import { NextResponse } from 'next/server';
-import { seedSixNations2025 } from '@/lib/seed';
+import { NextRequest } from 'next/server';
+import { seedSixNations2026 } from '@/lib/seed';
 
 /**
  * POST /api/seed
  * 
- * Dev-only route to seed Six Nations 2025 fixtures into Firestore
+ * Dev-only route to seed Six Nations 2026 fixtures into Firestore
  * 
  * Usage:
  * curl -X POST http://localhost:3000/api/seed
  * 
- * Or visit http://localhost:3000/api/seed in browser
+ * Or visit in browser:
+ * http://localhost:3000/api/seed
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const result = await seedSixNations2025();
+    const result = await seedSixNations2026();
     
     return NextResponse.json(result, {
       status: result.success ? 200 : 400,
@@ -34,6 +36,6 @@ export async function POST() {
  * 
  * Also support GET for easier browser testing
  */
-export async function GET() {
-  return POST();
+export async function GET(request: NextRequest) {
+  return POST(request);
 }

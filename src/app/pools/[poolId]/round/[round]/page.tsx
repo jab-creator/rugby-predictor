@@ -3,10 +3,13 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { getPool, getMatchesForRound } from '@/lib/pools';
-import { Pool, Match } from '@/lib/types';
+import { getPool, getMatchesForRound, getPoolMembers } from '@/lib/pools';
+import { subscribeToMatchesStatuses } from '@/lib/picks';
+import { Pool, Match, PoolMember, PickStatus } from '@/lib/types';
 import Header from '@/components/Header';
 import MatchCard from '@/components/MatchCard';
+import MemberStatusList from '@/components/MemberStatusList';
+import { PickStatusLegend } from '@/components/PickStatusIndicator';
 
 interface MatchWithId {
   id: string;
@@ -22,6 +25,8 @@ export default function RoundPage() {
 
   const [pool, setPool] = useState<Pool | null>(null);
   const [matches, setMatches] = useState<MatchWithId[]>([]);
+  const [members, setMembers] = useState<Array<{ id: string; member: PoolMember }>>([]);
+  const [matchStatuses, setMatchStatuses] = useState<Map<string, Map<string, PickStatus>>>(new Map());
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
 
@@ -35,6 +40,25 @@ export default function RoundPage() {
       loadRoundData();
     }
   }, [user, loading, poolId, round, router]);
+
+  // Subscribe to real-time status updates for all matches in this round
+  useEffect(() => {
+    if (!poolId || matches.length === 0) return;
+
+    const matchIds = matches.map(m => m.id);
+
+    const unsubscribe = subscribeToMatchesStatuses(poolId, matchIds, (matchId, statuses) => {
+      setMatchStatuses(prev => {
+        const newMap = new Map(prev);
+        newMap.set(matchId, statuses);
+        return newMap;
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [poolId, matches]);
 
   const loadRoundData = async () => {
     try {
@@ -60,6 +84,10 @@ export default function RoundPage() {
       });
 
       setMatches(matchesData);
+
+      // Load pool members
+      const membersData = await getPoolMembers(poolId);
+      setMembers(membersData);
     } catch (error) {
       console.error('Error loading round:', error);
       setError('Failed to load round data');
@@ -142,6 +170,13 @@ export default function RoundPage() {
           ))}
         </div>
 
+        {/* Status Legend */}
+        {matches.length > 0 && members.length > 0 && (
+          <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <PickStatusLegend />
+          </div>
+        )}
+
         {/* Matches */}
         {matches.length === 0 ? (
           <div className="text-center py-16">
@@ -161,18 +196,36 @@ export default function RoundPage() {
             </a>
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {matches.map(({ id, match }) => (
-              <MatchCard key={id} matchId={id} match={match} />
-            ))}
+          <div className="space-y-8">
+            {matches.map(({ id, match }) => {
+              const statuses = matchStatuses.get(id) || new Map();
+              
+              return (
+                <div key={id} className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                  {/* Match Card */}
+                  <MatchCard matchId={id} match={match} poolId={poolId} />
+                  
+                  {/* Member Status Section */}
+                  {members.length > 1 && (
+                    <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                        Pool Status ({statuses.size}/{members.length} picked)
+                      </h3>
+                      <MemberStatusList members={members} statuses={statuses} createdBy={pool?.createdBy} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
         {/* Info Banner */}
         {matches.length > 0 && (
-          <div className="mt-8 p-4 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
-            <p className="text-sm text-yellow-800 dark:text-yellow-200">
-              <strong>Note:</strong> Picks are not saved yet. Autosave functionality will be added in Milestone 3.
+          <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              <strong>💾 Autosave enabled:</strong> Your picks are automatically saved as you make them. 
+              Status updates in real-time across all pool members.
             </p>
           </div>
         )}

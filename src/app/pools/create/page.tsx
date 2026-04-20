@@ -8,7 +8,6 @@ import Header from '@/components/Header';
 
 // Hardcoded season options for Milestone 1
 const SEASONS = [
-  { id: 'six-nations-2025', name: 'Six Nations 2025' },
   { id: 'six-nations-2026', name: 'Six Nations 2026' },
 ];
 
@@ -48,9 +47,10 @@ export default function CreatePoolPage() {
       );
       
       router.push(`/pools/${poolId}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating pool:', error);
-      setError('Failed to create pool. Please try again.');
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      setError(`Failed to create pool: ${errorMessage}`);
       setCreating(false);
     }
   };

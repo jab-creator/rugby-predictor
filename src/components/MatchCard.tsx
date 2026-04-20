@@ -1,17 +1,80 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Match, TeamId } from '@/lib/types';
 import { TEAM_NAMES, TEAM_FLAGS } from '@/lib/fixtures';
+import { savePick, getUserPick } from '@/lib/picks';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface MatchCardProps {
   match: Match;
   matchId: string;
+  poolId: string;
 }
 
-export default function MatchCard({ match, matchId }: MatchCardProps) {
+export default function MatchCard({ match, matchId, poolId }: MatchCardProps) {
+  const { user } = useAuth();
   const [selectedWinner, setSelectedWinner] = useState<TeamId | null>(null);
   const [margin, setMargin] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load existing pick on mount
+  useEffect(() => {
+    if (!user || !poolId || !matchId) return;
+
+    const loadPick = async () => {
+      try {
+        const pick = await getUserPick(poolId, matchId, user.uid);
+        if (pick && pick.pickedWinnerTeamId && pick.pickedMargin) {
+          setSelectedWinner(pick.pickedWinnerTeamId);
+          setMargin(pick.pickedMargin.toString());
+        }
+      } catch (error) {
+        console.error('Error loading pick:', error);
+      }
+    };
+
+    loadPick();
+  }, [user, poolId, matchId]);
+
+  // Autosave when pick changes (debounced)
+  useEffect(() => {
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Only save if pick is complete
+    if (!user || !selectedWinner || !margin || margin === '') {
+      return;
+    }
+
+    const marginNum = parseInt(margin, 10);
+    if (marginNum < 1 || marginNum > 99) {
+      return;
+    }
+
+    // Debounce save by 500ms
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        setSaving(true);
+        await savePick(poolId, matchId, user.uid, selectedWinner, marginNum);
+        setLastSaved(new Date());
+      } catch (error) {
+        console.error('Error saving pick:', error);
+      } finally {
+        setSaving(false);
+      }
+    }, 500);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [user, poolId, matchId, selectedWinner, margin]);
 
   const formatKickoffTime = (kickoffAt: any) => {
     // Convert Firestore Timestamp to Date
@@ -113,20 +176,23 @@ export default function MatchCard({ match, matchId }: MatchCardProps) {
 
       {/* Status Indicator */}
       <div className="mt-4 text-center">
-        {isPickComplete ? (
+        {saving ? (
+          <div className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+            💾 Saving...
+          </div>
+        ) : isPickComplete && lastSaved ? (
           <div className="text-sm text-green-600 dark:text-green-400 font-medium">
-            ✓ Pick Complete (not saved yet)
+            ✓ Saved {new Date().getTime() - lastSaved.getTime() < 3000 ? 'just now' : 'automatically'}
+          </div>
+        ) : isPickComplete ? (
+          <div className="text-sm text-green-600 dark:text-green-400 font-medium">
+            ✓ Pick Complete
           </div>
         ) : (
           <div className="text-sm text-gray-400 dark:text-gray-500">
             Select winner and margin
           </div>
         )}
-      </div>
-
-      {/* Debug Info (for Milestone 2) */}
-      <div className="mt-3 text-xs text-gray-400 dark:text-gray-600 text-center">
-        Autosave coming in Milestone 3
       </div>
     </div>
   );

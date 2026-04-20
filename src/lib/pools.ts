@@ -84,7 +84,7 @@ export async function createPool(
   // Add creator as first member
   const memberData: Omit<PoolMember, 'joinedAt'> & { joinedAt: any } = {
     displayName,
-    photoURL,
+    ...(photoURL && { photoURL }),
     joinedAt: serverTimestamp(),
   };
   
@@ -132,7 +132,7 @@ export async function joinPool(
   // Add user as member
   const memberData: Omit<PoolMember, 'joinedAt'> & { joinedAt: any } = {
     displayName,
-    photoURL,
+    ...(photoURL && { photoURL }),
     joinedAt: serverTimestamp(),
   };
   
