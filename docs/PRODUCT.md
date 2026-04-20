@@ -1,54 +1,72 @@
 # Product Spec
 
 ## Goal
-A Six Nations-only predictor web app: create/join pools, make picks, track leaderboards, and compare picks.
+Evolve the app into a **Nations Championship predictor platform** with:
+- Public global competition
+- Dynamic segmentation leaderboards (country, hemisphere, fans vs pundits)
+- Manual invite/challenge pools
+- Knockout stages for top performers
+- Viral sharing hooks
 
-## Core concepts
-- **Season**: e.g., Six Nations 2026
-- **Matches**: fixtures with kickoff times, teams, final results
-- **Pool**: group of users competing on predictions
-- **Prediction**: per user per match: pick winner + margin (1–99)
-- **Status**: whether a user has made a pick and whether it is locked
+## Core Rule (Source of Truth)
+**Pools change ranking context, not scoring rules.**
 
-## Locked decisions (do not change)
-- Predictions are **winner + margin**, margin range **1–99**
-- Picks autosave. A complete autosave counts as **Picked**
-- Users can lock each match **irreversibly**
-- Picks are auto-final at kickoff (no edits after kickoff)
-- Visibility:
-  - Before kickoff: everyone can see status (No pick / Picked / Locked)
-  - Before kickoff: pick details visible only if both users locked that match
-  - After kickoff: pick details visible to all pool members
+Every user has **one tournament score** across the entire product.
+- ✅ Correct: Josh has 82 points globally, and that same 82 in country/hemisphere views.
+- ❌ Incorrect: Josh has different points in different pools.
 
-## User flows
-### 1) Create pool
-- User creates a pool for a specific season.
-- Pool generates a `joinCode`.
+## Competition Types
 
-### 2) Join pool
-- User joins by `joinCode`.
-- User becomes a member and appears in leaderboards.
+### 1) Public (dynamic) pools
+Computed from user attributes; no membership writes required.
+- Global
+- Country pools (e.g. Canada, England)
+- Hemisphere pools (North/South)
+- Fans vs Pundits
 
-### 3) Round view / making picks
-- User sees matches grouped by round.
-- For each match, user selects winner and margin.
-- Changes autosave immediately.
+### 2) Expert / pundit pools (manual)
+Invite-only or curated groups used for “beat the pundits” style comparison.
 
-### 4) Locking picks
-- User can lock an individual match pick.
-- Locking is irreversible.
-- UI also provides “Lock all completed picks” for the current round.
+### 3) Knockout pools (manual + snapshot)
+Top users from a qualifying leaderboard snapshot advance to bracket rounds.
+Qualification is snapshotted once; entrants are not continuously recomputed.
 
-### 5) Status visibility & reminders
-- In round view, show member list with per-match status.
-- This supports “remind your mates to pick” without revealing actual picks.
+## User Profile Segmentation Fields
+Each user profile supports dynamic public leaderboard grouping:
+- `countryCode` (e.g. `CA`)
+- `hemisphere` (`north` | `south`)
+- `isPundit` (boolean)
 
-### 6) After kickoff
-- Picks are final.
-- Everyone in pool can see everyone’s picks for that match.
-- Scoring is computed once results are final.
+## Scoring & Visibility Principles
+- Universal scoring for all users/matches.
+- No pool-specific point modifiers.
+- No “closest in country/pool” scoring bonuses.
+- Optional pool badges/achievements are allowed, but **non-scoring**.
 
-## UX notes
-- Mobile-first: making all picks for a round should take < 60 seconds.
-- Clear status chips: Draft/Picked, Locked, Final.
-- Avoid “submit” as a requirement; autosave is default.
+## Leaderboard Rules
+- Leaderboards are **precomputed**, not ranked on the fly.
+- Tiebreak order:
+  1. Total points
+  2. Correct winners
+  3. Exact scores
+  4. Submission timing (optional)
+
+## Scoring Lifecycle (backend)
+When a match becomes final:
+1. Fetch all predictions for the match.
+2. Compute points per prediction using universal scoring.
+3. Update prediction scoring fields.
+4. Update user tournament aggregate stats.
+5. Update affected precomputed leaderboards.
+
+## MVP Delivery Phases
+1. Predictions + match scoring + user tournament stats
+2. Global/country/hemisphere leaderboards
+3. Pundit pools + “beat X%” stats
+4. Knockout qualification + bracket system
+
+## Viral Features (post-MVP)
+- Shareable result cards
+- “Beat X% of players” highlights
+- Personal challenge pools
+- Weekly winners

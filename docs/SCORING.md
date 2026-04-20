@@ -1,70 +1,46 @@
-# Scoring Spec (LOCKED)
+# Scoring Spec (Universal Tournament Scoring)
 
-> Do not change without explicit instruction.
+## Non-negotiable rule
+Scoring is global and universal per tournament.
+- A user has one total score per tournament.
+- Pools/leaderboards only change who the user is compared against.
+- No pool-specific points, multipliers, or “closest in pool” bonuses.
 
-## Inputs
-Each prediction is:
-- `pickedWinner` (team)
-- `pickedMargin` (int 1–99)
+## Per-match scoring model
+Each finalized match awards points from universal components:
+- Correct winner points
+- Margin accuracy points
+- Team score accuracy points (optional)
+- Exact scoreline bonus (optional)
 
-Match result provides:
-- `actualWinner` (team) if non-draw
-- `actualMargin = abs(homeScore - awayScore)`
-- `isDraw = (homeScore == awayScore)`
+A practical baseline example:
+- Correct winner = 3 points
+- Exact margin = 2 points
+- Exact team score = 1 point per team
+- Exact scoreline = additional bonus
 
-## Constants
-- Winner points: `WINNER_PTS = 10`
-- Closest bonus pool: `CLOSEST_POOL = 5`
+> Constants are configurable but must be shared globally for all users.
 
-Margin bonus is based on:
-`err = abs(pickedMargin - actualMargin)`
+## Disallowed scoring behavior
+- No “closest in Canada/hemisphere/pundits pool gets extra points.”
+- No manual-pool-specific scoring tweaks.
+- No dynamic leaderboard-specific point adjustments.
 
-Margin bonus table (points):
-- err 0–2  => 10
-- err 3–5  => 7
-- err 6–9  => 5
-- err 10–14 => 2
-- err >=15 => 0
+If “closest” recognition is desired, use **badges/achievements only** (non-scoring).
 
-## Non-draw match scoring
-### Winner gate (strict)
-If `pickedWinner != actualWinner`:
-- total points = 0
-- not eligible for closest bonus
+## Tiebreakers (leaderboard ordering)
+1. Total points
+2. Correct winners
+3. Exact scores
+4. Submission timing (optional)
 
-If `pickedWinner == actualWinner`:
-- base = 10 + marginBonus(err)
-- eligible for closest bonus if `err <= 14`
+## Backend scoring flow
+When a match is marked final:
+1. Fetch all predictions for that match.
+2. Calculate points with the universal scoring function.
+3. Update prediction scoring fields.
+4. Update user tournament aggregate stats.
+5. Recompute affected precomputed leaderboards.
 
-### Closest bonus (per pool, per match)
-- Consider only eligible predictions (winner correct AND err <= 14)
-- Find minimum `err`
-- Let `k` = count of predictions with `err == minErr`
-- Each tied user gets: `closestBonus = floor(5 / k)`
-- Leftover points are discarded
-
-Total for a correct-winner prediction:
-`total = 10 + marginBonus + closestBonus`
-
-Max per non-draw match: 25
-
-## Draw match scoring (margin still pays)
-On a draw:
-- winner points are always 0 (no one can have correct winner)
-- `actualMargin = 0`
-- `err = abs(pickedMargin - 0) = pickedMargin`
-- base = marginBonus(err)
-- eligible for closest if `err <= 14` (no winner condition on draw)
-
-Closest bonus works the same:
-- eligible: err <= 14
-- min err ties split with floor(5/k)
-
-Total on draw:
-`total = marginBonus + closestBonus`
-
-Max on draw: 15
-
-## Examples
-- Non-draw: correct winner, predicted margin 8, actual margin 10 => err=2 => marginBonus=10
-- Draw: predicted margin 2 => err=2 => marginBonus=10
+## Idempotency requirement
+Scoring updates must be idempotent to prevent double application on retries/recomputes.
