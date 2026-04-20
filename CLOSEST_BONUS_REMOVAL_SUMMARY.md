@@ -2,7 +2,7 @@
 
 ## Change Overview
 
-The **closest bonus** scoring feature has been completely removed from the Nations Championship Predictor to simplify the scoring system.
+The **closest bonus** scoring feature has been completely removed from the Rugby Predictor to simplify the scoring system.
 
 ## Rationale
 

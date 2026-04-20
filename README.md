@@ -1,6 +1,6 @@
-# Nations Championship Predictor
+# Rugby Predictor
 
-A modern rugby prediction platform that evolved from a Six Nations predictor into a global Nations Championship app. Features include:
+A modern rugby prediction platform that evolved from a Six Nations predictor into a general rugby prediction app. Features include:
 
 - **Public global competition** with dynamic leaderboards
 - **Dynamic pools** (country, hemisphere, fans vs pundits) calculated from user attributes

@@ -1,8 +1,8 @@
-# Documentation Update Summary — Nations Championship Platform
+# Documentation Update Summary — General Rugby Predictor Platform
 
 ## Overview
 
-The project documentation has been successfully updated to reflect the evolution from a Six Nations-only predictor to a **Nations Championship predictor platform** with universal scoring, dynamic leaderboards, and knockout stages.
+The project documentation has been successfully updated to reflect the evolution from a Six Nations-only predictor to a **rugby predictor platform** with universal scoring, dynamic leaderboards, and knockout stages.
 
 ## Core Principle Changes
 
@@ -11,7 +11,7 @@ The project documentation has been successfully updated to reflect the evolution
 - Pool-based picks with pool-specific aggregations
 - Leaderboards per pool
 
-### After (Nations Championship Platform)
+### After (General Rugby Predictor Platform)
 - **Universal scoring** — one score per user per tournament
 - **Dynamic pools** — global, country, hemisphere, pundits (calculated from user attributes)
 - **Manual pools** — friends, challenges, knockout (stored memberships)
@@ -24,7 +24,7 @@ The project documentation has been successfully updated to reflect the evolution
 
 ### 1. README.md
 **Changes:**
-- Title changed to "Nations Championship Predictor"
+- Title changed to "Rugby Predictor"
 - Added feature highlights: public global competition, dynamic pools, knockout stages
 - **Added "Core Principles" section** emphasizing:
   - Single source of truth for scoring
@@ -43,7 +43,7 @@ The project documentation has been successfully updated to reflect the evolution
 
 ### 2. docs/PRODUCT.md
 **Changes:**
-- Goal updated to Nations Championship platform
+- Goal updated to general rugby prediction platform
 - Added "Evolution" section explaining transition from Six Nations
 - Added "Core Principles" section (matching README)
 - **Updated user flows:**
@@ -123,7 +123,7 @@ The project documentation has been successfully updated to reflect the evolution
 
 ### 5. docs/BUILD_PLAN.md
 **Changes:**
-- **Complete restructure** with 15 milestones aligned to Nations Championship architecture
+- **Complete restructure** with 15 milestones aligned to general rugby predictor architecture
 - Added "Core Architecture Principles" section at top
 - Restructured into 6 phases:
 
@@ -263,4 +263,4 @@ For implementation, always refer to:
 - Never calculate different scores per pool
 - Precompute all leaderboards
 
-The documentation now provides a clear, consistent roadmap for building the Nations Championship platform with universal scoring at its core.
+The documentation now provides a clear, consistent roadmap for building the general rugby prediction platform with universal scoring at its core.

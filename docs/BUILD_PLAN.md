@@ -1,6 +1,6 @@
-# Build Plan — Nations Championship Platform
+# Build Plan — General Rugby Predictor Platform
 
-This build plan reflects the evolution from a Six Nations-only predictor to a Nations Championship platform with universal scoring, dynamic leaderboards, and knockout stages.
+This build plan reflects the evolution from a Six Nations-only predictor to a general rugby prediction platform with universal scoring, dynamic leaderboards, and knockout stages.
 
 ## Core Architecture Principles
 
@@ -51,7 +51,7 @@ Before starting any milestone, understand these principles:
 
 ---
 
-## Upcoming Milestones (Restructured for Nations Championship)
+## Upcoming Milestones (Restructured for General Rugby Predictor)
 
 ## Phase 1: Universal Predictions & Single Source of Truth
 
@@ -96,7 +96,7 @@ Before starting any milestone, understand these principles:
 
 **Kickoff prompt:**
 ```
-Nations Championship predictor, Milestone 6: Universal Scoring Engine.
+Rugby predictor, Milestone 6: Universal Scoring Engine.
 M0–M5 done. This is the most critical milestone.
 
 In scope:
@@ -168,7 +168,7 @@ Read docs/SCORING.md and docs/DATA_MODEL.md before starting.
 
 **Kickoff prompt:**
 ```
-Nations Championship predictor, Milestone 8: Dynamic Leaderboards.
+Rugby predictor, Milestone 8: Dynamic Leaderboards.
 M0–M7 done. Scoring engine and user_tournament_stats working.
 
 In scope:
@@ -288,7 +288,7 @@ Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 
 **In scope:**
 - Generate shareable images:
-  * "I scored 82 points in Nations Championship 2026"
+  * "I scored 82 points in Six Nations 2026"
   * "Beat 89% of players globally"
   * "Ranked 2nd in Canada"
 - Share to social media (Twitter, Facebook, etc.)

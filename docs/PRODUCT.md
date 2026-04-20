@@ -1,9 +1,9 @@
 # Product Spec
 
 ## Goal
-A Nations Championship predictor platform featuring public global competition, dynamic leaderboards, pundit pools, and knockout stages with viral sharing potential.
+A general rugby predictor platform featuring public global competition, dynamic leaderboards, pundit pools, and knockout stages with viral sharing potential.
 
-## Evolution from Six Nations to Nations Championship
+## Evolution from Six Nations to General Rugby Predictor
 The app evolved from a Six Nations-only predictor into a general rugby prediction platform supporting:
 - Multiple tournaments (Six Nations, Rugby Championship, Nations Championship, etc.)
 - Public global competition alongside private pools
