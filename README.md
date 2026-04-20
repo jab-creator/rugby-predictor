@@ -31,7 +31,15 @@ A modern, fast Six Nations predictor (SuperBru-style, but cleaner). Users join p
 
 ### Prerequisites
 - Node.js 18+ (tested with 22.x)
-- Java JRE (required for Firebase Firestore emulator)
+- **Java JDK 21+** (the Firebase emulators now require Java 21 or later; a plain JRE is not sufficient). You can install it system‑wide or unzip a build locally and point `JAVA_HOME` to it. For example:
+  ```powershell
+  curl -L -o jdk21.zip https://aka.ms/download-jdk/microsoft-jdk-21.0.10-windows-x64.zip
+  Expand-Archive jdk21.zip -DestinationPath jdk21
+  $env:JAVA_HOME = "$PWD\jdk21\jdk-21.0.10+7"
+  $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+  java -version  # should report 21+
+  ```
+- (or install via installer/package manager if you have admin rights)
 
 ### Setup
 1. Install dependencies:
@@ -46,10 +54,18 @@ A modern, fast Six Nations predictor (SuperBru-style, but cleaner). Users join p
    ```
    For local development with emulators, the provided `.env.local` has placeholder values that work out of the box.
 
-3. Build Cloud Functions:
+3. Build Cloud Functions (required before starting the emulators):
    ```bash
    cd functions && npm run build && cd ..
    ```
+
+4. (Optional) ensure your terminal session is using a Java 21+ runtime. If you installed a local JDK as shown above, export `JAVA_HOME`/`PATH` before running emulators:
+   ```powershell
+   $env:JAVA_HOME = "$PWD\jdk21\jdk-21.0.10+7"
+   $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+   ```
+
+5. Run the emulators (see below) and, if you hit port errors, kill any processes listening on 4000, 9099, 8080, etc., or choose alternate ports via `firebase.json`.
 
 ### Running the app
 
@@ -67,6 +83,8 @@ npm run emulators
 - Auth Emulator: http://localhost:9099
 - Firestore Emulator: http://localhost:8080
 - Functions Emulator: http://localhost:5001
+
+> ⚠️ **Port conflicts** – if you see errors like “port 8080 is not open” or “emulator UI port taken”, another process is using the port. Kill the offending process (`netstat -ano | findstr :8080` then `taskkill /PID <pid> /F`) or adjust the ports in `firebase.json`/`firebase emulators:start --port` before retrying.
 
 #### Run both together
 Terminal 1:

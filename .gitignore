@@ -44,3 +44,11 @@ yarn-error.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Playwright
+e2e/.auth/
+playwright-report/
+test-results/
+
+jdk21/
+jdk21.zip
