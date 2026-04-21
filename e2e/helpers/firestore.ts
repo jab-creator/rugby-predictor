@@ -124,7 +124,7 @@ export async function createTestPool(
   creatorUid: string,
   displayName: string,
   poolName: string = 'E2E Test Pool',
-  seasonId: string = 'six-nations-2026',
+  seasonId: string = 'nations-championship-2026',
 ): Promise<TestPool> {
   const poolId = `e2e-pool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const joinCode = generateJoinCode();
@@ -242,39 +242,61 @@ export async function getPickStatus(
  * Seed a future-dated test season so pick writes succeed in tests.
  *
  * Security rules require kickoffAt > request.time for picks writes.
- * Six Nations 2026 fixtures are in the past so tests that save picks must
- * use this season instead of 'six-nations-2026'.
+ * Nations Championship 2026 fixtures may be in the past so tests that save
+ * picks must use this season instead of 'nations-championship-2026'.
  *
  * Seasons have open rules (allow read, write: if true) so no auth needed.
  */
-export async function seedTestSeason(seasonId: string = 'six-nations-test'): Promise<void> {
+export async function seedTestSeason(seasonId: string = 'nations-championship-test'): Promise<void> {
   await firestoreSet(`seasons/${seasonId}`, {
-    name: 'Six Nations Test (Future)',
-    startsAt: new Date('2099-01-01T00:00:00Z'),
-    endsAt: new Date('2099-03-31T23:59:59Z'),
+    name: 'Nations Championship Test (Future)',
+    startsAt: new Date('2099-07-01T00:00:00Z'),
+    endsAt: new Date('2099-11-30T23:59:59Z'),
   });
 
   const fixtures = [
     // Round 1
-    { round: 1, home: 'FRA', away: 'IRE', kickoffAt: new Date('2099-01-05T15:00:00Z') },
-    { round: 1, home: 'ITA', away: 'SCO', kickoffAt: new Date('2099-01-05T16:30:00Z') },
-    { round: 1, home: 'ENG', away: 'WAL', kickoffAt: new Date('2099-01-05T18:00:00Z') },
+    { round: 1, home: 'JPN', away: 'ITA', kickoffAt: new Date('2099-07-05T05:00:00Z') },
+    { round: 1, home: 'NZL', away: 'FRA', kickoffAt: new Date('2099-07-05T07:10:00Z') },
+    { round: 1, home: 'AUS', away: 'IRE', kickoffAt: new Date('2099-07-05T10:00:00Z') },
+    { round: 1, home: 'FIJ', away: 'WAL', kickoffAt: new Date('2099-07-05T13:10:00Z') },
+    { round: 1, home: 'RSA', away: 'ENG', kickoffAt: new Date('2099-07-05T15:40:00Z') },
+    { round: 1, home: 'ARG', away: 'SCO', kickoffAt: new Date('2099-07-05T19:00:00Z') },
     // Round 2
-    { round: 2, home: 'SCO', away: 'WAL', kickoffAt: new Date('2099-01-12T15:00:00Z') },
-    { round: 2, home: 'IRE', away: 'ITA', kickoffAt: new Date('2099-01-12T16:30:00Z') },
-    { round: 2, home: 'FRA', away: 'ENG', kickoffAt: new Date('2099-01-12T18:00:00Z') },
+    { round: 2, home: 'JPN', away: 'IRE', kickoffAt: new Date('2099-07-12T04:00:00Z') },
+    { round: 2, home: 'NZL', away: 'ITA', kickoffAt: new Date('2099-07-12T05:10:00Z') },
+    { round: 2, home: 'AUS', away: 'FRA', kickoffAt: new Date('2099-07-12T07:30:00Z') },
+    { round: 2, home: 'FIJ', away: 'ENG', kickoffAt: new Date('2099-07-12T13:10:00Z') },
+    { round: 2, home: 'RSA', away: 'SCO', kickoffAt: new Date('2099-07-12T15:40:00Z') },
+    { round: 2, home: 'ARG', away: 'WAL', kickoffAt: new Date('2099-07-12T19:00:00Z') },
     // Round 3
-    { round: 3, home: 'WAL', away: 'ENG', kickoffAt: new Date('2099-01-19T15:00:00Z') },
-    { round: 3, home: 'ITA', away: 'FRA', kickoffAt: new Date('2099-01-19T16:30:00Z') },
-    { round: 3, home: 'SCO', away: 'IRE', kickoffAt: new Date('2099-01-19T18:00:00Z') },
+    { round: 3, home: 'JPN', away: 'FRA', kickoffAt: new Date('2099-07-19T05:00:00Z') },
+    { round: 3, home: 'NZL', away: 'IRE', kickoffAt: new Date('2099-07-19T07:10:00Z') },
+    { round: 3, home: 'AUS', away: 'ITA', kickoffAt: new Date('2099-07-19T09:45:00Z') },
+    { round: 3, home: 'FIJ', away: 'SCO', kickoffAt: new Date('2099-07-19T13:10:00Z') },
+    { round: 3, home: 'RSA', away: 'WAL', kickoffAt: new Date('2099-07-19T15:40:00Z') },
+    { round: 3, home: 'ARG', away: 'ENG', kickoffAt: new Date('2099-07-19T19:00:00Z') },
     // Round 4
-    { round: 4, home: 'IRE', away: 'WAL', kickoffAt: new Date('2099-01-26T15:00:00Z') },
-    { round: 4, home: 'ENG', away: 'SCO', kickoffAt: new Date('2099-01-26T16:30:00Z') },
-    { round: 4, home: 'FRA', away: 'ITA', kickoffAt: new Date('2099-01-26T18:00:00Z') },
+    { round: 4, home: 'IRE', away: 'ARG', kickoffAt: new Date('2099-11-07T20:10:00Z') },
+    { round: 4, home: 'ITA', away: 'RSA', kickoffAt: new Date('2099-11-08T14:10:00Z') },
+    { round: 4, home: 'SCO', away: 'NZL', kickoffAt: new Date('2099-11-08T14:10:00Z') },
+    { round: 4, home: 'WAL', away: 'JPN', kickoffAt: new Date('2099-11-08T16:40:00Z') },
+    { round: 4, home: 'FRA', away: 'FIJ', kickoffAt: new Date('2099-11-08T20:10:00Z') },
+    { round: 4, home: 'ENG', away: 'AUS', kickoffAt: new Date('2099-11-09T15:10:00Z') },
     // Round 5
-    { round: 5, home: 'WAL', away: 'FRA', kickoffAt: new Date('2099-02-02T15:00:00Z') },
-    { round: 5, home: 'SCO', away: 'ENG', kickoffAt: new Date('2099-02-02T16:30:00Z') },
-    { round: 5, home: 'ITA', away: 'IRE', kickoffAt: new Date('2099-02-02T18:00:00Z') },
+    { round: 5, home: 'FRA', away: 'RSA', kickoffAt: new Date('2099-11-14T20:10:00Z') },
+    { round: 5, home: 'ITA', away: 'ARG', kickoffAt: new Date('2099-11-15T14:10:00Z') },
+    { round: 5, home: 'IRE', away: 'FIJ', kickoffAt: new Date('2099-11-15T14:10:00Z') },
+    { round: 5, home: 'WAL', away: 'NZL', kickoffAt: new Date('2099-11-15T16:40:00Z') },
+    { round: 5, home: 'ENG', away: 'JPN', kickoffAt: new Date('2099-11-15T16:40:00Z') },
+    { round: 5, home: 'SCO', away: 'AUS', kickoffAt: new Date('2099-11-16T15:10:00Z') },
+    // Round 6
+    { round: 6, home: 'ITA', away: 'FIJ', kickoffAt: new Date('2099-11-22T14:10:00Z') },
+    { round: 6, home: 'SCO', away: 'JPN', kickoffAt: new Date('2099-11-22T14:10:00Z') },
+    { round: 6, home: 'ENG', away: 'NZL', kickoffAt: new Date('2099-11-22T14:10:00Z') },
+    { round: 6, home: 'IRE', away: 'RSA', kickoffAt: new Date('2099-11-22T16:40:00Z') },
+    { round: 6, home: 'FRA', away: 'ARG', kickoffAt: new Date('2099-11-22T20:10:00Z') },
+    { round: 6, home: 'WAL', away: 'AUS', kickoffAt: new Date('2099-11-22T20:10:00Z') },
   ];
 
   for (const f of fixtures) {

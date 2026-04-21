@@ -1,7 +1,9 @@
 import { Timestamp } from 'firebase/firestore';
 
-// Team IDs for Six Nations
-export type TeamId = 'ENG' | 'FRA' | 'IRE' | 'ITA' | 'SCO' | 'WAL';
+// Team IDs for Nations Championship (Northern + Southern Hemisphere)
+export type TeamId =
+  | 'ENG' | 'FRA' | 'IRE' | 'ITA' | 'SCO' | 'WAL'
+  | 'RSA' | 'NZL' | 'AUS' | 'ARG' | 'FIJ' | 'JPN';
 
 // Match status
 export type MatchStatus = 'scheduled' | 'live' | 'final';
@@ -18,7 +20,7 @@ export interface Season {
 }
 
 export interface Match {
-  round: number; // 1-5
+  round: number; // 1-6
   kickoffAt: Timestamp;
   homeTeamId: TeamId;
   awayTeamId: TeamId;

@@ -12,13 +12,13 @@ export const FAKE_API_KEY = 'fake-api-key';
 export const FIREBASE_API_KEY =
   process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? FAKE_API_KEY;
 
-// Real Six Nations 2026 season — used for read-only tests (round view etc.)
-export const SEASON_ID = 'six-nations-2026';
+// Real Nations Championship 2026 season — used for read-only tests (round view etc.)
+export const SEASON_ID = 'nations-championship-2026';
 
 // Future-dated test season — used for any test that writes picks.
 // Security rules require kickoffAt > request.time, so tests that save picks
 // must use fixtures whose kickoff times are in the far future.
-export const TEST_SEASON_ID = 'six-nations-test';
+export const TEST_SEASON_ID = 'nations-championship-test';
 
 export const TEST_USER = {
   email: 'playwright-test@example.com',

@@ -178,8 +178,8 @@ export default function PoolDetailPage() {
         <div className="border-t border-gray-200 dark:border-gray-700 pt-8 mt-8">
           <h2 className="text-2xl font-bold mb-6">Rounds</h2>
           
-          <div className="grid gap-4 md:grid-cols-5">
-            {[1, 2, 3, 4, 5].map((round) => (
+          <div className="grid gap-4 md:grid-cols-6">
+            {[1, 2, 3, 4, 5, 6].map((round) => (
               <button
                 key={round}
                 onClick={() => router.push(`/pools/${poolId}/round/${round}`)}

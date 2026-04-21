@@ -82,10 +82,10 @@ test.describe('Create Pool page', () => {
     await expect(page.getByRole('button', { name: /cancel/i })).toBeVisible();
   });
 
-  test('season dropdown has Six Nations 2026 option', async ({ page }) => {
+  test('season dropdown has Nations Championship 2026 option', async ({ page }) => {
     const select = page.getByLabel(/season/i);
     await expect(select).toBeVisible();
-    await expect(select).toContainText('Six Nations 2026');
+    await expect(select).toContainText('Nations Championship 2026');
   });
 
   test('successfully creates a pool and redirects to pool detail', async ({ page }) => {

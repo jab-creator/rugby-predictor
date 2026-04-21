@@ -6,9 +6,8 @@ import { useEffect, useState, FormEvent } from 'react';
 import { createPool } from '@/lib/pools';
 import Header from '@/components/Header';
 
-// Hardcoded season options for Milestone 1
 const SEASONS = [
-  { id: 'six-nations-2026', name: 'Six Nations 2026' },
+  { id: 'nations-championship-2026', name: 'Nations Championship 2026' },
 ];
 
 export default function CreatePoolPage() {

@@ -29,7 +29,7 @@ export default function Header() {
     return (
       <header className="w-full p-4 border-b border-gray-200 dark:border-gray-800">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <h2 className="text-xl font-bold">🏉 Six Nations</h2>
+          <h2 className="text-xl font-bold">🏉 Nations Championship</h2>
           <div className="w-24 h-10 bg-gray-200 dark:bg-gray-700 animate-pulse rounded"></div>
         </div>
       </header>
@@ -43,7 +43,7 @@ export default function Header() {
           onClick={() => router.push('/')}
           className="text-xl font-bold hover:opacity-80 transition-opacity"
         >
-          🏉 Six Nations
+          🏉 Nations Championship
         </button>
         
         <div className="flex items-center gap-4">
