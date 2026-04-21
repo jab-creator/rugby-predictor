@@ -29,10 +29,12 @@ The app evolved from a Six Nations-only predictor into a general rugby predictio
   - Who you are compared against
   - Your rank, **NOT your points**
 
-### 2. No Pool-Specific Scoring
+### 2. No Pool-Specific Scoring (or Pool-Specific Points)
 - Do **NOT** calculate points differently per pool
 - Do **NOT** give bonus points based on pool membership or ranking
+- Do **NOT** create alternate "pool points" for different leaderboards
 - Use **universal scoring rules** only
+- Compare unequal groups using **leaderboard summary stats** (avg, median, percentiles), not raw rank
 - Optional: Add badges/achievements per pool (non-scoring)
 
 ### 3. Dynamic Pools (Calculated, Not Stored)
@@ -77,6 +79,11 @@ Only these require `pools/{poolId}/members/{userId}`:
 - User views **Pundits** leaderboard (isPundit users only)
 - User views **Fans vs Pundits** comparison
 - Same score everywhere, different rank based on comparison group
+- **Cross-group comparison** via leaderboard summary stats:
+  - "North avg: 64 pts vs South avg: 58 pts"
+  - "Top 10 in Canada avg: 91 pts vs Top 10 in NZ avg: 88 pts"
+- Per-user **percentile** within each leaderboard (e.g., "Top 12% in Canada")
+- Ties handled sports-style: equal metrics share the same rank
 
 ### 3) Manual pools (Friends, challenges, pundits)
 - User creates a manual pool with `joinCode`
@@ -117,3 +124,6 @@ Only these require `pools/{poolId}/members/{userId}`:
 - Avoid "submit" as a requirement; autosave is default
 - Emphasize universal scoring: "Your score: 82 points. Global: 14th, Canada: 2nd"
 - Leaderboards show rank and context, never imply different scores
+- Show percentile for richer context: "Top 12% globally | Top 5% in Canada"
+- Cross-group comparison headlines: "North avg: 64 pts vs South avg: 58 pts"
+- Ties display naturally: two users at rank 1, next at rank 3

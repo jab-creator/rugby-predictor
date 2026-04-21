@@ -75,22 +75,27 @@ Before starting any milestone, understand these principles:
 **Goal:** Implement scoring that updates `user_tournament_stats` (single source of truth)
 
 **In scope:**
-- Create `user_tournament_stats/{tournamentId_userId}` collection
+- Create `user_tournament_stats/{tournamentId_userId}` collection with full schema:
+  * Aggregate scoring: `totalPoints`, `correctWinners`, `exactScores`
+  * Rebuild safety: `scoredMatchCount`, `lastScoredMatchId`, `pointsByRound`
+  * Tiebreaker: `lastLockedPredictionAt` (set when predictions lock)
 - Pure scoring functions (unit tested) from existing SCORING.md
 - Cloud Function `onMatchFinalized`:
   * Fetch all predictions for match
   * Compute points per prediction (winner, margin accuracy)
   * Update `predictions/{userId_matchId}` with scoring fields
-  * Update `user_tournament_stats` with totalPoints, correctWinners, exactScores
+  * Update `user_tournament_stats` with all fields including rebuild safety fields
 - Admin UI to mark match final + enter result
-- Idempotency via `scoring_runs/{matchId}`
+- Idempotency via `scoring_runs/{matchId}` + `scoredMatchCount`/`lastScoredMatchId` for partial-run detection
 
 **Out of scope:** Leaderboards (built in Phase 2)
 
 **Done looks like:**
 - Match result entry triggers universal scoring
 - Each user has ONE score in `user_tournament_stats`
+- `scoredMatchCount`, `lastScoredMatchId`, `pointsByRound` populated correctly
 - Tests verify scoring is universal and identical for all users
+- Tests verify idempotency (re-running doesn't double-count)
 - Scoring engine updates both predictions and user_tournament_stats
 
 **Kickoff prompt:**
@@ -100,17 +105,21 @@ M0–M5 done. This is the most critical milestone.
 
 In scope:
 - user_tournament_stats/{tournamentId_userId} collection (SINGLE SOURCE OF TRUTH)
+  with rebuild safety fields: scoredMatchCount, lastScoredMatchId, pointsByRound
 - Pure scoring function (no Firestore imports) following docs/SCORING.md
 - Jest tests for all scoring rules (winner gate, margin bonuses, draws)
 - Cloud Function onMatchFinalized:
   * Fetch all predictions globally
   * Compute points per prediction
-  * Update user_tournament_stats (totalPoints, correctWinners, exactScores)
+  * Update user_tournament_stats (totalPoints, correctWinners, exactScores,
+    scoredMatchCount, lastScoredMatchId, pointsByRound)
   * Write scoring_runs/{matchId} for idempotency
 - Admin UI to mark match final
+- Tiebreaker field: lastLockedPredictionAt (set when prediction locks,
+  NOT when prediction is saved/edited)
 
 Key constraint: scoring is universal and identical for all users.
-Verify this in tests.
+Verify this in tests. Also test idempotency — re-running must not double-count.
 
 Read docs/SCORING.md and docs/DATA_MODEL.md before starting.
 ```
@@ -140,30 +149,44 @@ Read docs/SCORING.md and docs/DATA_MODEL.md before starting.
 - Ready for dynamic leaderboard queries
 
 ### Milestone 8: Global & Dynamic Leaderboards
-**Goal:** Build precomputed leaderboards for global, country, hemisphere, pundits
+**Goal:** Build precomputed leaderboards with summary stats and cross-group comparison
 
 **In scope:**
-- `leaderboards/{leaderboardId}` collection
+- `leaderboards/{leaderboardId}` collection with **tournament-scoped IDs**:
+  * `{tournamentId}__global`, `{tournamentId}__country_CA`, `{tournamentId}__hemisphere_north`, etc.
 - `leaderboards/{leaderboardId}/entries/{userId}` subcollection
-- Cloud Function `updateAllLeaderboards(tournamentId)`:
+- Leaderboard metadata with **summary stats** for cross-group comparison:
+  * `avgPoints`, `medianPoints`, `top10AvgPoints`, `winnerPoints`, `percentileBuckets`
+- Leaderboard entries with **tie-aware ranks** and **percentile**:
+  * `rank` (tied users share same rank), `position` (sequential row number)
+  * `percentile` (0–100 within this leaderboard)
+- Cloud Function `updateLeaderboards(tournamentId)`:
   * Triggered after scoring updates
+  * **Eager:** Global, hemisphere, pundits — updated immediately
+  * **Lazy:** Country leaderboards — via queue or on-read refresh
   * Queries `user_tournament_stats` with filters
-  * Sorts by totalPoints DESC, correctWinners DESC, exactScores DESC
-  * Computes ranks (1, 2, 3, ...)
-  * Writes leaderboard entries
+  * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC, exactScores DESC, lastLockedPredictionAt ASC
+  * Computes tie-aware ranks (equal metrics → same rank, next = rank + tied count)
+  * Computes summary stats (avg, median, percentiles) for leaderboard metadata
+  * Writes leaderboard entries with rank + percentile
 - Leaderboard UI:
   * Global leaderboard (all users)
   * Country selector (shows country leaderboard)
   * Hemisphere toggle (North/South)
   * Pundits leaderboard
   * "Your score: 82 pts | Global: 14th | Canada: 2nd"
+  * Cross-group comparison: "North avg: 64 pts vs South avg: 58 pts"
 
 **Out of scope:** Manual pools, knockout
 
 **Done looks like:**
 - Users see their rank in multiple leaderboards
 - Same score everywhere, different ranks
-- Leaderboards update automatically after each match
+- Tied users share the same rank
+- Leaderboard metadata includes summary stats
+- Cross-group comparison possible via summary stats
+- Per-entry percentile enables normalized comparison
+- Leaderboards update automatically (eager for public, lazy for niche)
 
 **Kickoff prompt:**
 ```
@@ -172,15 +195,27 @@ M0–M7 done. Scoring engine and user_tournament_stats working.
 
 In scope:
 - Precomputed leaderboards (global, country, hemisphere, pundits)
-- Cloud Function updateAllLeaderboards(tournamentId):
+- Tournament-scoped IDs: {tournamentId}__global, {tournamentId}__country_CA, etc.
+- Leaderboard metadata with summary stats: avgPoints, medianPoints,
+  top10AvgPoints, winnerPoints, percentileBuckets (p10/p25/p50/p75/p90)
+- Tie-aware ranking: equal metrics = same rank, next rank skips
+- Per-entry percentile (0–100 within leaderboard)
+- Cloud Function updateLeaderboards(tournamentId):
+  * Eager: global, hemisphere, pundits (immediate)
+  * Lazy: country leaderboards (queue or on-read)
   * Queries user_tournament_stats with filters
-  * Sorts and computes ranks
-  * Writes leaderboards/{leaderboardId}/entries/{userId}
+  * Sorts by tiebreaker chain including lastLockedPredictionAt
+  * Computes ranks, percentiles, and summary stats
+  * Writes leaderboards/{leaderboardId} + entries/{userId}
 - Leaderboard UI with tabs: Global, Country, Hemisphere, Pundits
 - Display: "Your score: 82 pts | Global: 14th | Canada: 2nd"
+- Cross-group comparison via summary stats (not raw rank)
 
-Key constraint: leaderboards show SAME score, different rank. Never imply
-different scores per leaderboard.
+Key constraints:
+- Leaderboards show SAME score, different rank
+- No pool-specific points — ever
+- Cross-group comparison uses summary stats, not raw rank
+- Ties are sports-style (shared rank, next skips)
 
 Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 ```
@@ -202,8 +237,10 @@ Read docs/DATA_MODEL.md (Leaderboards section) before starting.
   * Members can see each other's predictions (subject to lock/kickoff visibility)
 - Cloud Function `updatePoolLeaderboards`:
   * Queries user_tournament_stats for pool members
-  * Computes ranks within pool
+  * Computes tie-aware ranks within pool
+  * Computes per-entry percentile
   * Writes pools/{poolId}/entries/{userId}
+  * Updated **lazily** (on read or via batch job), not synchronously after every match
 
 **Out of scope:** Pundit pools, knockout
 
@@ -340,8 +377,13 @@ Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 - **Always read docs/SCORING.md, docs/DATA_MODEL.md, docs/PRODUCT.md before starting**
 - **Test that scoring is universal and identical for all users**
 - **Verify same score appears in all leaderboards**
-- **Pools change rank, not score**
+- **Pools change rank, not score — never create pool-specific points**
 - **Precompute ranks, don't calculate on the fly**
+- **Use tournament-scoped leaderboard IDs** (`{tournamentId}__{type}`)
+- **Handle ties sports-style** (equal metrics = same rank, next skips)
+- **Cross-group comparison uses summary stats and percentile**, not raw rank
+- **Leaderboard updates use eager/lazy split** for scaling
+- **Scoring must be safely rebuildable** from scored predictions
 
 ---
 

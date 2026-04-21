@@ -87,12 +87,14 @@ When a match is finalized:
    - `totalPoints += prediction.totalPoints`
    - `correctWinners += 1` (if winner correct)
    - `exactScores += 1` (if err == 0)
-5. **Propagate to all leaderboards:**
-   - Global leaderboard
-   - Country leaderboards
-   - Hemisphere leaderboards
-   - Pundit leaderboard
-   - All manual pools
+   - `scoredMatchCount += 1`
+   - `lastScoredMatchId = matchId`
+   - `pointsByRound[match.round] += prediction.totalPoints`
+5. **Propagate to leaderboards** (see DATA_MODEL.md for eager/lazy strategy):
+   - Global leaderboard (eager)
+   - Hemisphere/Pundit leaderboards (eager)
+   - Country leaderboards (lazy — queue or on-read)
+   - Manual pool leaderboards (lazy)
 
 ### Critical Rules
 
@@ -132,9 +134,25 @@ When testing scoring:
 - Verify max points: 20 (non-draw with correct winner and err 0-2), 10 (draw with err 0-2)
 - Example: Josh = 82 points everywhere; Global rank = 14, Canada rank = 2
 
-### Idempotency
+### Idempotency & Rebuild Safety
 
-Use `scoring_runs/{matchId}` to ensure scoring is only applied once per match. If a match result needs to be corrected:
+Use `scoring_runs/{matchId}` to ensure scoring is only applied once per match.
+The `scoredMatchCount` and `lastScoredMatchId` fields on `user_tournament_stats`
+provide an additional check for partial-run detection (e.g., function retried mid-batch).
+
+**Score correction flow** (if a match result needs to be corrected):
 1. Delete the `scoring_runs/{matchId}` doc
-2. Subtract old points from `user_tournament_stats`
-3. Re-run scoring with corrected result
+2. Re-score all predictions for that match with the corrected result
+3. Recompute `user_tournament_stats` — either:
+   - Subtract old points + add new points (incremental), or
+   - Derive totals from all scored predictions (full rebuild)
+4. Rebuild affected leaderboards
+
+**Full rebuild flow** (if scoring rules change or data integrity is in question):
+1. Re-score all predictions from scratch
+2. Recompute `user_tournament_stats` entirely from scored predictions
+3. `pointsByRound` can be used for partial round-level rebuilds
+4. Rebuild all leaderboards with summary stats and ranks
+
+The normal flow uses increments for efficiency, but the model is designed so that
+leaderboard state can always be **derived** from scored predictions if needed.

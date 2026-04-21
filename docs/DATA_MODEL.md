@@ -17,16 +17,26 @@
 - `predictions/{userId_matchId}` - User predictions (universal across all contexts)
 - `user_tournament_stats/{tournamentId_userId}` - **SINGLE SOURCE OF TRUTH** for user's score
 
+> **Scaling note on `predictions`:** The top-level `predictions` collection works but may
+> become operationally awkward at scale since most access is tournament-bound. If needed,
+> consider migrating to `tournaments/{tournamentId}/predictions/{userId_matchId}` or
+> `users/{userId}/predictions/{matchId}` with a scoring projection. The current model is
+> valid for MVP — revisit if query patterns become painful.
+
 ### 2. Leaderboards (Precomputed, Dynamic)
-- `leaderboards/{leaderboardId}` - Metadata
+- `leaderboards/{leaderboardId}` - Metadata + summary stats for cross-group comparison
 - `leaderboards/{leaderboardId}/entries/{userId}` - Precomputed leaderboard entries
 
-Leaderboard IDs:
-- `global` - all users
-- `country_CA`, `country_GB`, etc. - per country
-- `hemisphere_north`, `hemisphere_south` - per hemisphere
-- `pundits` - isPundit users only
-- `fans` - !isPundit users only
+Leaderboard IDs are **tournament-scoped** using double-underscore separator:
+- `six-nations-2026__global` - all users
+- `six-nations-2026__country_CA`, `six-nations-2026__country_GB`, etc. - per country
+- `six-nations-2026__hemisphere_north`, `six-nations-2026__hemisphere_south` - per hemisphere
+- `six-nations-2026__pundits` - isPundit users only
+- `six-nations-2026__fans` - !isPundit users only
+
+**Why tournament-scoped IDs?** Without the tournament prefix, IDs like `global` or
+`hemisphere_north` would collide across tournaments. The `{tournamentId}__{type}` pattern
+avoids needing a subcollection under tournaments while keeping IDs globally unique.
 
 ### 3. Manual Pools (Stored Membership)
 - `pools/{poolId}` - Pool metadata
@@ -154,8 +164,17 @@ User's prediction for a match. **Universal across all contexts.**
   correctWinners: number;
   exactScores: number;       // count of err == 0
   
-  // Tiebreakers
-  lastPredictionAt?: Timestamp;
+  // Rebuild safety — enables safe re-scoring and partial-run detection
+  scoredMatchCount: number;        // how many matches have been scored for this user
+  lastScoredMatchId?: string;      // last match that updated this doc
+  pointsByRound?: {                // map of round number → points earned that round
+    [round: string]: number;       // e.g., { "1": 37, "2": 45, "3": 0 }
+  };
+  
+  // Tiebreaker — timestamp of the user's most recent prediction that was
+  // locked (either manually or auto-locked at kickoff). Deterministic: only
+  // set/updated when a prediction transitions to locked state.
+  lastLockedPredictionAt?: Timestamp;
   
   updatedAt: Timestamp;
 }
@@ -166,29 +185,58 @@ User's prediction for a match. **Universal across all contexts.**
 **Usage:**
 - When match finalized → scoring engine computes points per prediction → updates this doc
 - Leaderboards read from this doc, NOT from individual predictions
+- `scoredMatchCount` and `lastScoredMatchId` allow detection of partial scoring runs
+- `pointsByRound` enables leaderboard rebuilds without re-querying all predictions
+- If a score correction or re-scoring is needed, leaderboard totals can be **derived**
+  from scored predictions as a fallback, even though normal flow uses increments
 
 ---
 
 ## Leaderboards (Precomputed, Dynamic)
 
 ### `leaderboards/{leaderboardId}`
-Leaderboard metadata.
+Leaderboard metadata and **summary statistics for cross-group comparison**.
 
 ```typescript
 {
-  id: string;                // "global", "country_CA", "hemisphere_north", "pundits"
-  name: string;              // "Global", "Canada", "Northern Hemisphere", "Pundits"
+  id: string;                // tournament-scoped: "six-nations-2026__global",
+                             // "six-nations-2026__country_CA", etc.
   tournamentId: string;
   type: "global" | "country" | "hemisphere" | "pundit_status";
+  name: string;              // "Global", "Canada", "Northern Hemisphere", "Pundits"
   
   // Filter criteria (for dynamic leaderboards)
   filterKey?: string;        // "countryCode", "hemisphere", "isPundit"
   filterValue?: string;      // "CA", "north", "true"
   
   totalUsers: number;        // denormalized count
+  
+  // Summary stats — enable fair cross-group comparison
+  // (e.g., "Which hemisphere is stronger?" or "How elite is this group?")
+  avgPoints: number;
+  medianPoints: number;
+  top10AvgPoints?: number;   // average of top 10 users (or all if < 10)
+  winnerPoints?: number;     // points of rank-1 user
+  percentileBuckets?: {
+    p10: number;             // points at 10th percentile
+    p25: number;
+    p50: number;             // same as medianPoints
+    p75: number;
+    p90: number;
+  };
+  
   lastUpdatedAt: Timestamp;
 }
 ```
+
+**Why summary stats?** Raw rank alone is misleading for cross-group comparison.
+North hemisphere (400 users) rank 1 vs South hemisphere (120 users) rank 1 are not
+equivalent. Summary stats let you compare groups fairly:
+- `avgPoints` — "Which group is stronger overall?"
+- `medianPoints` — robust against outlier skew
+- `top10AvgPoints` — "Which group's elite players are stronger?"
+- `winnerPoints` — headline stat
+- `percentileBuckets` — full distributional comparison
 
 **Security:** Read: all authenticated. Write: server only.
 
@@ -201,13 +249,18 @@ Precomputed leaderboard entry.
   displayName: string;
   photoURL?: string;
   
-  // Copied from user_tournament_stats
+  // Copied from user_tournament_stats (universal — same in every leaderboard)
   totalPoints: number;
   correctWinners: number;
   exactScores: number;
   
-  // Computed rank
-  rank: number;              // 1-indexed
+  // Rank within this leaderboard (tie-aware — see ranking rules below)
+  rank: number;              // 1-indexed, tied users share the same rank
+  position?: number;         // row number for display (1, 2, 3, ... always unique)
+  
+  // Normalized context for cross-leaderboard comparison
+  percentile?: number;       // 0–100 within this leaderboard (100 = best)
+  zScore?: number;           // optional, standard deviations from mean
   
   updatedAt: Timestamp;
 }
@@ -217,8 +270,14 @@ Precomputed leaderboard entry.
 
 **How ranks are computed:**
 - **NOT on the fly** — precomputed by Cloud Function after each match
-- Sort by: `totalPoints DESC`, then `correctWinners DESC`, then `exactScores DESC`, then `lastPredictionAt ASC`
-- Assign `rank = 1, 2, 3, ...`
+- Sort by: `totalPoints DESC`, then `correctWinners DESC`, then `exactScores DESC`, then `lastLockedPredictionAt ASC`
+- **Tie handling (sports-style):**
+  - Users with identical metrics on all tiebreakers share the same `rank`
+  - The next distinct user gets `rank = previous rank + count of tied users`
+  - Example: two users tied at rank 1 → next user is rank 3
+  - `position` is always sequential (1, 2, 3, ...) for display/pagination
+  - This matters for knockout qualification cutoffs — ties at the cutoff boundary
+    should include all tied users (qualify N+tied, not exclude arbitrarily)
 
 ---
 
@@ -270,13 +329,15 @@ Precomputed pool leaderboard entry. **Same scoring as global, different ranking 
   displayName: string;
   photoURL?: string;
   
-  // Copied from user_tournament_stats (SAME SCORE)
+  // Copied from user_tournament_stats (SAME SCORE — universal)
   totalPoints: number;
   correctWinners: number;
   exactScores: number;
   
-  // Rank within THIS pool
+  // Rank within THIS pool (tie-aware, same rules as dynamic leaderboards)
   rank: number;
+  position?: number;
+  percentile?: number;       // 0–100 within this pool
   
   updatedAt: Timestamp;
 }
@@ -371,17 +432,52 @@ When a match is finalized (`status: "final"`, `homeScore` and `awayScore` set):
      - `totalPoints += prediction.totalPoints`
      - `correctWinners += 1` (if winner correct)
      - `exactScores += 1` (if err == 0)
-5. Trigger `updateAllLeaderboards(tournamentId)`
-   - For each dynamic leaderboard (global, country, hemisphere, pundits):
-     - Query `user_tournament_stats` filtered by leaderboard criteria
-     - Sort and compute ranks
-     - Write/update `leaderboards/{leaderboardId}/entries/{userId}`
-   - For each manual pool:
-     - Query `user_tournament_stats` for pool members
-     - Sort and compute ranks
-     - Write/update `pools/{poolId}/entries/{userId}`
+     - `scoredMatchCount += 1`
+     - `lastScoredMatchId = matchId`
+     - `pointsByRound[match.round] += prediction.totalPoints`
+5. Trigger `updateLeaderboards(tournamentId)` — see scaling strategy below
 
-**Idempotency:** Use `scoring_runs/{matchId}` to prevent double-scoring.
+**Idempotency:** Use `scoring_runs/{matchId}` to prevent double-scoring. The
+`scoredMatchCount` and `lastScoredMatchId` fields on `user_tournament_stats` provide
+an additional check for partial-run detection (e.g., function retried mid-batch).
+
+### Leaderboard Update Strategy
+
+After scoring, leaderboards need rank recomputation:
+
+**Eager updates (always run immediately):**
+- Global leaderboard (`{tournamentId}__global`)
+- Other high-visibility public leaderboards (hemisphere, pundits)
+
+**Lazy updates (acceptable delay):**
+- Country leaderboards — update via background queue or on next read
+- Manual pool leaderboards — update lazily on read, or via batch job
+
+This split matters at scale. Updating every pool and every country leaderboard
+synchronously after each match becomes a scaling bottleneck as user count grows.
+The pattern is:
+- `user_tournament_stats` is always the **source of truth**
+- Public leaderboards are **eagerly projected**
+- Pool/niche leaderboards are **lazily refreshed** (stale for seconds/minutes, not hours)
+
+For each leaderboard update (eager or lazy):
+1. Query `user_tournament_stats` filtered by leaderboard criteria
+2. Sort by tiebreaker chain, compute tie-aware ranks
+3. Compute summary stats (`avgPoints`, `medianPoints`, `percentileBuckets`, etc.)
+4. Write/update `leaderboards/{leaderboardId}` metadata
+5. Write/update `leaderboards/{leaderboardId}/entries/{userId}` with rank + percentile
+
+### Score Correction / Rebuild
+
+If a match result is corrected or scoring rules change:
+1. Delete `scoring_runs/{matchId}`
+2. Re-score all predictions for that match
+3. Recompute `user_tournament_stats` from scored predictions (or subtract old + add new)
+4. Rebuild affected leaderboards
+
+`pointsByRound` and `scoredMatchCount` make partial rebuilds feasible without
+re-querying every prediction. For a full rebuild, derive totals from all scored
+predictions as the canonical fallback.
 
 ---
 
@@ -390,7 +486,15 @@ When a match is finalized (`status: "final"`, `homeScore` and `awayScore` set):
 1. `totalPoints` DESC
 2. `correctWinners` DESC
 3. `exactScores` DESC
-4. `lastPredictionAt` ASC (earlier submission wins)
+4. `lastLockedPredictionAt` ASC (earlier lock wins)
+
+**Definition of `lastLockedPredictionAt`:** The timestamp of the user's most recent
+prediction that transitioned to locked state (either via manual lock or auto-lock at
+kickoff). This is deterministic — it does not change after lock, and is unambiguous
+unlike "last prediction" which could mean last edit, last save, or last submission.
+
+**If all tiebreakers are equal:** Users share the same `rank`. See ranking rules in
+the leaderboard entries section above.
 
 ---
 
@@ -401,12 +505,20 @@ When a match is finalized (`status: "final"`, `homeScore` and `awayScore` set):
 - Precompute leaderboards after each match finalized
 - Use user attributes (`countryCode`, `hemisphere`, `isPundit`) to filter dynamic leaderboards
 - Copy score from `user_tournament_stats` to leaderboard entries (same score, different rank)
+- Use tournament-scoped leaderboard IDs (`{tournamentId}__{type}`)
+- Handle ties: equal metrics → same rank, next rank skips
+- Store leaderboard summary stats for cross-group comparison
+- Store per-entry percentile for normalized context
+- Design scoring updates to be safely re-runnable (idempotency + rebuild fields)
 
 ### ❌ DON'T
 - Store different scores per pool
 - Calculate scores differently per leaderboard
 - Give bonus points based on pool membership or ranking
 - Compute ranks on the fly in client queries
+- Create "pool points" or alternate point systems for different leaderboards
+- Compare groups by raw rank alone (use percentile/summary stats instead)
+- Force unique ranks when tiebreaker metrics are identical
 
 ---
 
@@ -451,8 +563,13 @@ pools/{poolId}/entries: (rank ASC)
   correctWinners: number;
   exactScores: number;
   
-  // Tiebreakers
-  lastPredictionAt?: Timestamp;
+  // Rebuild safety
+  scoredMatchCount: number;
+  lastScoredMatchId?: string;
+  pointsByRound?: { [round: string]: number };
+  
+  // Tiebreaker
+  lastLockedPredictionAt?: Timestamp;
   
   // Denormalized from users/{userId} for dynamic leaderboard filtering
   displayName: string;
@@ -493,8 +610,14 @@ db.collection('user_tournament_stats')
 ## Summary
 
 - **ONE score per user per tournament** in `user_tournament_stats`
+- **No pool-specific points** — keep one universal score, never create alternate point systems
 - **Predictions are universal** across all contexts
 - **Dynamic pools** (global, country, hemisphere, pundits) calculated from user attributes
 - **Manual pools** (friends, pundits, knockout) store membership but use same scoring
 - **Leaderboards are precomputed** with ranks, not calculated on the fly
+- **Leaderboard IDs are tournament-scoped** (`{tournamentId}__{type}`)
+- **Ties are sports-style** — equal metrics share the same rank
+- **Cross-group comparison** uses leaderboard summary stats + per-entry percentile, not raw rank
+- **Scoring is safely rebuildable** via `scoredMatchCount`, `pointsByRound`, and derivation from predictions
+- **Leaderboard updates scale** via eager/lazy split — public projections are immediate, pool/niche are batched
 - **Pools change ranking context, NOT scoring rules**
