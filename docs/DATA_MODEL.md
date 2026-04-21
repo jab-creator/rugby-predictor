@@ -490,20 +490,6 @@ db.collection('user_tournament_stats')
 
 ---
 
-## Migration Notes
-
-**Current state (Milestone 4):** Pool-based architecture with `picks_detail` and `picks_status` per pool.
-
-**Target state:** Global predictions with `user_tournament_stats` and dynamic leaderboards.
-
-**Migration strategy:**
-- Phase 1: Add `predictions` and `user_tournament_stats` collections alongside existing pools
-- Phase 2: Migrate scoring engine to update `user_tournament_stats`
-- Phase 3: Build dynamic leaderboards and precomputed entries
-- Phase 4: Deprecate pool-specific picks (keep pools for manual membership only)
-
----
-
 ## Summary
 
 - **ONE score per user per tournament** in `user_tournament_stats`

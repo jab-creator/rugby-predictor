@@ -94,7 +94,6 @@ The project documentation has been successfully updated to reflect the evolution
 - Tiebreakers
 - Key Rules (DO / DON'T)
 - Indexes
-- Migration Notes
 - Updated schema with denormalization for filtering
 
 ---
@@ -151,7 +150,7 @@ The project documentation has been successfully updated to reflect the evolution
 - Milestone 15: Polish & Production Hardening
 
 **Key additions:**
-- ✅ Migration strategy from pool-based to universal
+- ✅ Implementation roadmap with 15 milestones
 - ✅ Kickoff prompts for critical milestones
 - ✅ Clear scope per milestone
 - ✅ Phase-based organization
@@ -194,23 +193,23 @@ Only these require stored memberships:
 
 ---
 
-## Migration Path (from Current State)
+## Implementation Path
 
 **Current State (Milestone 4):**
-- Pool-based picks: `pools/{poolId}/picks_detail` and `picks_status`
-- Pool-specific leaderboards
+- Pool-based picks with locking ✅
+- No live data or users yet
 
-**Target State:**
+**Target Architecture:**
 - Universal predictions: `predictions/{userId_matchId}`
 - Single source of truth: `user_tournament_stats/{tournamentId_userId}`
 - Dynamic leaderboards + manual pools
 
-**Migration Strategy:**
-1. Add `predictions` collection alongside existing picks (M5)
+**Implementation Phases:**
+1. Replace pool-specific picks with universal predictions (M5)
 2. Implement universal scoring engine (M6)
 3. Build dynamic leaderboards (M7-8)
-4. Refactor pools to use universal scoring (M9)
-5. Deprecate pool-specific picks (later)
+4. Add manual pools with universal scoring (M9)
+5. Launch MVP (M8)
 
 ---
 

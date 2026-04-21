@@ -173,18 +173,14 @@ totalPoints = marginBonus(err);
 
 ---
 
-## Migration Notes
+## Implementation Notes
 
-**Current implementation (Milestone 4):**
-- Does NOT yet implement scoring engine
-- Scoring changes will be implemented in Milestone 6
+**Current State (Milestone 4):**
+- Scoring engine not yet implemented
+- No live data or users
+- No migration needed
 
-**No data migration needed** since scoring hasn't been implemented yet.
-
-If scoring HAD been implemented with closest bonus:
-1. Re-run scoring for all finalized matches
-2. Recalculate user_tournament_stats totals
-3. Regenerate all leaderboards
+**Simplified scoring will be implemented in Milestone 6** using the updated rules (max 20 points, no closest bonus).
 
 ---
 

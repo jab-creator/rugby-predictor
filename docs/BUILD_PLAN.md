@@ -56,20 +56,19 @@ Before starting any milestone, understand these principles:
 ## Phase 1: Universal Predictions & Single Source of Truth
 
 ### Milestone 5: Universal Predictions Collection
-**Goal:** Migrate from pool-specific picks to universal predictions
+**Goal:** Replace pool-specific picks with universal predictions
 
 **In scope:**
 - Create `predictions/{userId_matchId}` collection (universal)
-- Migrate existing picks to predictions format
 - Update autosave logic to write to predictions
 - Update status tracking
-- Maintain backward compatibility with existing pool-based UI
+- Remove pool-specific picks collections
 
 **Out of scope:** Scoring engine, leaderboards
 
 **Done looks like:**
 - Predictions stored globally, not per pool
-- UI still works with existing pool views
+- Autosave writes to universal predictions collection
 - Data model ready for universal scoring
 
 ### Milestone 6: Universal Scoring Engine
@@ -86,13 +85,13 @@ Before starting any milestone, understand these principles:
 - Admin UI to mark match final + enter result
 - Idempotency via `scoring_runs/{matchId}`
 
-**Out of scope:** Leaderboards, pools still use old aggregation temporarily
+**Out of scope:** Leaderboards (built in Phase 2)
 
 **Done looks like:**
 - Match result entry triggers universal scoring
 - Each user has ONE score in `user_tournament_stats`
 - Tests verify scoring is universal and identical for all users
-- Existing pool views still work (reading from user_tournament_stats)
+- Scoring engine updates both predictions and user_tournament_stats
 
 **Kickoff prompt:**
 ```
@@ -333,20 +332,6 @@ Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 - Production URL live
 - Auto-lock working on real fixtures
 - Monitoring in place
-
----
-
-## Migration Strategy (from Pool-Based to Universal)
-
-Since Milestone 4 is complete with pool-based picks, the migration strategy is:
-
-1. **Milestone 5:** Add `predictions` collection alongside existing `pools/{poolId}/picks_*`
-2. **Milestone 6:** Implement scoring engine using `predictions` → `user_tournament_stats`
-3. **Milestone 7–8:** Build dynamic leaderboards reading from `user_tournament_stats`
-4. **Milestone 9:** Refactor pools to read from `user_tournament_stats` instead of pool-specific aggregates
-5. **Later:** Deprecate `pools/{poolId}/picks_*` (keep pools for membership only)
-
-This allows incremental migration without breaking existing functionality.
 
 ---
 
