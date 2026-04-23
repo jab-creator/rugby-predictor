@@ -49,44 +49,38 @@ Before starting any milestone, understand these principles:
 - Lock button + bulk lock
 - Security rules enforcement
 
+#### Milestone 5: Universal Predictions Collection
+- Canonical `predictions/{userId_matchId}` collection added
+- Autosave writes universal predictions
+- Explicit prediction schema supports match/user/tournament queries
+- Legacy `picks_status` / `picks_detail` retained as compatibility layer for current UI
+- Manual lock + kickoff auto-lock mirror `lockedAt` into universal predictions and compatibility status docs
+- Firestore rules and index config updated for universal prediction flow
+- Focused E2E coverage verifies universal autosave + lock mirroring
+
 ---
 
 ## Upcoming Milestones (Restructured for General Rugby Predictor)
 
 ## Phase 1: Universal Predictions & Single Source of Truth
 
-### Milestone 5: Universal Predictions Collection
-**Goal:** Replace pool-specific picks with universal predictions
-
-**In scope:**
-- Create `predictions/{userId_matchId}` collection (universal)
-- Update autosave logic to write to predictions
-- Update status tracking
-- Remove pool-specific picks collections
-
-**Out of scope:** Scoring engine, leaderboards
-
-**Done looks like:**
-- Predictions stored globally, not per pool
-- Autosave writes to universal predictions collection
-- Data model ready for universal scoring
-
 ### Milestone 6: Universal Scoring Engine
-**Goal:** Implement scoring that updates `user_tournament_stats` (single source of truth)
+**Goal:** Score universal predictions into `user_tournament_stats` while keeping current prediction/lock compatibility behavior stable
 
 **In scope:**
 - Create `user_tournament_stats/{tournamentId_userId}` collection with full schema:
   * Aggregate scoring: `totalPoints`, `correctWinners`, `exactScores`
   * Rebuild safety: `scoredMatchCount`, `lastScoredMatchId`, `pointsByRound`
-  * Tiebreaker: `lastLockedPredictionAt` (set when predictions lock)
+  * Tiebreaker: `lastLockedPredictionAt` (derived from prediction lock state, not save time)
 - Pure scoring functions (unit tested) from existing SCORING.md
 - Cloud Function `onMatchFinalized`:
-  * Fetch all predictions for match
+  * Fetch all predictions for the match from top-level `predictions`
   * Compute points per prediction (winner, margin accuracy)
-  * Update `predictions/{userId_matchId}` with scoring fields
-  * Update `user_tournament_stats` with all fields including rebuild safety fields
+  * Update `predictions/{userId_matchId}` with scoring fields: `winnerCorrect`, `err`, `marginBonus`, `totalPoints`
+  * Update `user_tournament_stats` with all aggregate and rebuild-safety fields
 - Admin UI to mark match final + enter result
 - Idempotency via `scoring_runs/{matchId}` + `scoredMatchCount`/`lastScoredMatchId` for partial-run detection
+- Preserve the current compatibility layer during scoring work; do not remove legacy status/detail docs until scoring and visibility are stable
 
 **Out of scope:** Leaderboards (built in Phase 2)
 
@@ -101,7 +95,14 @@ Before starting any milestone, understand these principles:
 **Kickoff prompt:**
 ```
 Rugby predictor, Milestone 6: Universal Scoring Engine.
-M0–M5 done. This is the most critical milestone.
+M0–M5 done. Universal predictions are now the canonical pick store.
+
+Current state:
+- `predictions/{userId}_{matchId}` is the canonical prediction document
+- autosave writes predictions
+- lock flow writes `isLocked` / `lockedAt` on predictions
+- legacy `picks_status` / `picks_detail` still exist as a compatibility layer for current UI/status-dot behavior
+- do not remove that compatibility layer yet unless absolutely necessary
 
 In scope:
 - user_tournament_stats/{tournamentId_userId} collection (SINGLE SOURCE OF TRUTH)
@@ -109,8 +110,9 @@ In scope:
 - Pure scoring function (no Firestore imports) following docs/SCORING.md
 - Jest tests for all scoring rules (winner gate, margin bonuses, draws)
 - Cloud Function onMatchFinalized:
-  * Fetch all predictions globally
+  * Fetch all predictions for a match from top-level `predictions`
   * Compute points per prediction
+  * Update prediction scoring fields: winnerCorrect, err, marginBonus, totalPoints
   * Update user_tournament_stats (totalPoints, correctWinners,
     sumErrOnCorrectWinners, exactScores, scoredMatchCount,
     lastScoredMatchId, pointsByRound)
@@ -118,12 +120,15 @@ In scope:
 - Admin UI to mark match final
 - Tiebreaker fields stored in user_tournament_stats:
   * totalPoints, correctWinners, sumErrOnCorrectWinners, exactScores
-  * lastLockedPredictionAt (set when prediction locks, NOT when saved/edited)
-  * sumErrOnCorrectWinners: only incremented when winnerCorrect == true
-  * exactScores: only incremented when winnerCorrect == true AND err == 0
+  * lastLockedPredictionAt (set from prediction locking, NOT from save/edit time)
+  * sumErrOnCorrectWinners increments only when winnerCorrect == true
+  * exactScores increments only when winnerCorrect == true AND err == 0
 
-Key constraint: scoring is universal and identical for all users.
-Verify this in tests. Also test idempotency — re-running must not double-count.
+Key constraints:
+- scoring is universal and identical for all users
+- scoring must read from universal predictions, not pool-specific pick docs
+- idempotency is mandatory — re-running must not double-count
+- preserve current round UI / compatibility-layer behavior unless a change is required and clearly justified
 
 Read docs/SCORING.md and docs/DATA_MODEL.md before starting.
 ```

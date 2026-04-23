@@ -24,6 +24,7 @@ Users predict matches by picking **winner + margin**. Picks autosave, and users 
 - [Firestore data model](docs/DATA_MODEL.md)
 - [Security rules intent](docs/SECURITY_RULES.md)
 - [Build plan](docs/BUILD_PLAN.md)
+- [Milestone 5 completion notes](Milestone_5_complete.md)
 
 ## Core Principles (CRITICAL)
 
@@ -204,4 +205,12 @@ rugby-predictor/
 - [x] Security rules: client can never write `lockedAt != null`; writes denied once doc is locked or past kickoff
 - [x] Testing: `autoLockMatch` accepts direct POST in emulator (`curl http://localhost:5001/.../autoLockMatch`)
 
-**Next:** Milestone 5 — Full security rules + visibility (locked-both reveal, post-kickoff reveal)
+#### Milestone 5: ✅ Complete (Universal Predictions Collection)
+- [x] Top-level `predictions/{userId}_{matchId}` collection is now the canonical pick store
+- [x] Autosave writes universal predictions with explicit fields (`userId`, `matchId`, `tournamentId`, `winner`, `margin`, `isComplete`, `isLocked`, `lockedAt`, `createdAt`, `updatedAt`)
+- [x] Existing pool-scoped `picks_status` / `picks_detail` remain as a minimal compatibility layer so current round UI and status dots do not break
+- [x] Manual lock + kickoff auto-lock both update universal predictions and mirror `lockedAt` to compatibility status docs
+- [x] Firestore rules updated for universal predictions and index config added for match-scoped auto-lock queries
+- [x] Focused E2E coverage verifies universal prediction autosave and compatibility lock mirroring
+
+**Next:** Milestone 6 — Universal scoring engine using `predictions` as the single scoring input and `user_tournament_stats` as the single scoring output
