@@ -11,8 +11,8 @@ test.describe('Unauthenticated — home page', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('shows the Six Nations Predictor heading', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: /Six Nations Predictor/i })).toBeVisible();
+  test('shows the Nations Championship Predictor heading', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: /Nations Championship Predictor/i })).toBeVisible();
   });
 
   test('shows "Sign in to get started" prompt', async ({ page }) => {

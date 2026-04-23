@@ -3,8 +3,8 @@ import './globals.css'
 import { AuthProvider } from '@/contexts/AuthContext'
 
 export const metadata: Metadata = {
-  title: 'Six Nations Predictor',
-  description: 'Predict Six Nations rugby matches with friends',
+  title: 'Nations Championship Predictor',
+  description: 'Predict Nations Championship rugby matches with friends',
 }
 
 export default function RootLayout({

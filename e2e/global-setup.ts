@@ -2,7 +2,7 @@
  * Playwright globalSetup — runs once before all test projects.
  *
  * 1. Wipes all Firestore data in the emulator (clean slate each run)
- * 2. Seeds Six Nations 2026 season + 15 match fixtures via the app's /api/seed route
+ * 2. Seeds Nations Championship 2026 season + 36 match fixtures via the app's /api/seed route
  *
  * Requires emulators to be running: `npm run emulators`
  * Requires Next.js dev server to be running: `npm run dev`
@@ -16,7 +16,7 @@ export default async function globalSetup(): Promise<void> {
   await clearFirestore();
   console.log('[globalSetup] Firestore cleared.');
 
-  console.log('[globalSetup] Seeding Six Nations 2026 fixtures...');
+  console.log('[globalSetup] Seeding Nations Championship 2026 fixtures...');
   const res = await fetch(`${APP_URL}/api/seed`);
 
   if (!res.ok) {
@@ -31,7 +31,7 @@ export default async function globalSetup(): Promise<void> {
   }
 
   // Seed a future-dated test season for tests that write picks.
-  // The 2026 fixtures are in the past; security rules require kickoffAt > now
+  // The 2026 fixtures may be in the past; security rules require kickoffAt > now
   // for all picks writes, so tests that save picks use this season instead.
   console.log('[globalSetup] Seeding future-dated test season...');
   await seedTestSeason();

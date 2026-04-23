@@ -1,7 +1,9 @@
 import { Timestamp } from 'firebase/firestore';
 
-// Team IDs for Six Nations
-export type TeamId = 'ENG' | 'FRA' | 'IRE' | 'ITA' | 'SCO' | 'WAL';
+// Team IDs for Nations Championship (Northern + Southern Hemisphere)
+export type TeamId =
+  | 'ENG' | 'FRA' | 'IRE' | 'ITA' | 'SCO' | 'WAL'
+  | 'RSA' | 'NZL' | 'AUS' | 'ARG' | 'FIJ' | 'JPN';
 
 // Match status
 export type MatchStatus = 'scheduled' | 'live' | 'final';
@@ -18,7 +20,7 @@ export interface Season {
 }
 
 export interface Match {
-  round: number; // 1-5
+  round: number; // 1-6
   kickoffAt: Timestamp;
   homeTeamId: TeamId;
   awayTeamId: TeamId;
@@ -74,7 +76,65 @@ export interface PickDetail {
   totalPoints?: number;
 }
 
+// ==================== USER TOURNAMENT STATS ====================
+
+export interface UserTournamentStats {
+  id: string;                    // "{tournamentId}_{userId}"
+  userId: string;
+  tournamentId: string;
+
+  // Aggregate scoring
+  totalPoints: number;
+  correctWinners: number;
+  sumErrOnCorrectWinners: number; // cumulative err across correct-winner predictions
+  exactScores: number;            // count of predictions where err == 0
+
+  // Rebuild safety
+  scoredMatchCount: number;
+  lastScoredMatchId?: string;
+  pointsByRound?: Record<string, number>;
+
+  // Tiebreaker
+  lastLockedPredictionAt?: Timestamp;
+
+  // Denormalized user attributes for leaderboard filtering
+  displayName: string;
+  photoURL?: string;
+  countryCode?: string;
+  hemisphere?: 'north' | 'south';
+  isPundit: boolean;
+
+  updatedAt: Timestamp;
+}
+
 // ==================== LEADERBOARDS ====================
+
+export interface LeaderboardMeta {
+  id: string;                    // tournament-scoped: "{tournamentId}__{type}"
+  tournamentId: string;
+  type: 'global' | 'country' | 'hemisphere' | 'pundit_status';
+  name: string;
+
+  filterKey?: string;
+  filterValue?: string;
+
+  totalUsers: number;
+
+  // Summary stats for cross-group comparison
+  avgPoints: number;
+  medianPoints: number;
+  top10AvgPoints?: number;
+  winnerPoints?: number;
+  percentileBuckets?: {
+    p10: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    p90: number;
+  };
+
+  lastUpdatedAt: Timestamp;
+}
 
 export interface Leaderboard {
   totalPoints: number;
@@ -109,10 +169,23 @@ export interface PickView {
 // Pick visibility status for UI
 export type PickVisibility = 'no-pick' | 'picked' | 'locked' | 'final';
 
-// Leaderboard entry with user info
+// Leaderboard entry with user info and tiebreaker fields
 export interface LeaderboardEntry {
   userId: string;
   displayName: string;
   photoURL?: string;
+
+  // Scoring (copied from UserTournamentStats — universal)
   totalPoints: number;
+  correctWinners: number;
+  sumErrOnCorrectWinners: number;
+  exactScores: number;
+  lastLockedPredictionAt?: Timestamp;
+
+  // Rank within this leaderboard (tie-aware)
+  rank: number;
+  position: number;        // sequential row number (always unique)
+
+  // Normalized context for cross-leaderboard comparison
+  percentile?: number;     // 0–100 within this leaderboard
 }

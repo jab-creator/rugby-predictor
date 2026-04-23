@@ -1,302 +1,402 @@
-# Build Plan (milestones)
+# Build Plan — General Rugby Predictor Platform
 
-Each milestone has a **kickoff prompt** — copy-paste it into a fresh Claude chat when starting that milestone to load context without replaying the whole project history.
+This build plan reflects the evolution from a Six Nations-only predictor to a general rugby prediction platform with universal scoring, dynamic leaderboards, and knockout stages.
 
----
+## Core Architecture Principles
 
-## Milestone 0: Scaffold ✅
+Before starting any milestone, understand these principles:
 
-- Scaffold frontend (Next.js) and Firebase config.
-- Set up Firebase emulator config for local dev (Auth + Firestore + Functions).
-
-**Done looks like:**
-- App runs locally
-- Firebase project configuration present
-- Basic routing exists
+1. **Single Source of Truth:** Each user has ONE score per tournament in `user_tournament_stats`
+2. **No Pool-Specific Scoring:** Pools change ranking context, NOT scoring rules
+3. **Dynamic Pools:** Global, country, hemisphere, pundits — calculated from user attributes
+4. **Manual Pools:** Only for friends, pundits, challenges, knockout — stored membership
+5. **Precomputed Leaderboards:** Ranks are precomputed after each match, not on the fly
 
 ---
 
-## Milestone 1: Auth + Pool membership ✅
+## Milestone Status
 
-- Firebase Auth (Google + optional email magic link)
-- Create pool (name, seasonId) and generate joinCode
-- Join pool via joinCode (handle collisions)
-- User profile doc created on first sign-in
-- Members list renders
-- **Security rules:** users can read/write own profile; pool membership gates pool reads
+### ✅ Completed (Current State)
 
-**Done looks like:**
-- Users can create/join pool and appear as members
-- Rejoining with same joinCode is idempotent
+#### Milestone 0: Scaffold
+- Next.js 14 + React 18 + TypeScript
+- Firebase SDK configured
+- Cloud Functions scaffolded
+- Emulator configuration
+- Types defined
 
-### Kickoff prompt
-```
-I'm working on a Six Nations predictor app. Tech stack: Next.js 14 + React 18 +
-TypeScript, Firebase Auth/Firestore/Functions, Firebase Hosting. Source-of-truth
-specs are in docs/PRODUCT.md, docs/DATA_MODEL.md, docs/SECURITY_RULES.md.
+#### Milestone 1: Auth + Pool Membership
+- Firebase Auth with Google sign-in
+- Create/join pools with joinCode
+- Members list
+- User profiles
 
-This is Milestone 1: Auth + Pool membership. In scope:
-- Google sign-in via Firebase Auth
-- Create pool with auto-generated joinCode (handle collisions)
-- Join pool via joinCode
-- User profile doc on first sign-in
-- Members list with avatars
-- Firestore security rules for users + pools + members
+#### Milestone 2: Fixtures & Round View
+- Six Nations 2025 fixtures
+- Seed utility
+- Round navigation
+- Pick UI (winner + margin)
 
-Out of scope: fixtures, picks, scoring.
-
-Please read the data model and security rules specs before suggesting code,
-and confirm the pool/member collection structure before we start.
-```
-
----
-
-## Milestone 2: Fixtures & Round view ✅
-
-- Seed matches for season into `/seasons/{seasonId}/matches`
-- Round page shows matches with kickoff times in user's local tz
-- Pick input UI (winner + margin 1–99), no persistence yet
-
-**Done looks like:**
-- Round view loads from Firestore fixtures
-- Pick UI works for each match
-
-### Kickoff prompt
-```
-Six Nations predictor, Milestone 2: Fixtures & Round view. Specs in
-docs/PRODUCT.md and docs/DATA_MODEL.md. Auth + pool membership already
-working from M1.
-
-In scope:
-- Seed Six Nations 2025 fixtures into /seasons/{seasonId}/matches
-- Round navigation from pool detail
-- Round view: match cards with kickoff in local tz
-- Pick UI: winner + margin 1–99 (no save yet, M3)
-
-kickoffTime MUST be stored as Firestore Timestamp, not string — security rules
-and kickoff enforcement in later milestones depend on this.
-
-Out of scope: autosave, locking, visibility, scoring.
-```
-
----
-
-## Milestone 3: Autosave picks + status dots ✅
-
-- Dual-doc pattern: `picks_detail` (private) + `picks_status` (public status only)
-- Autosave with 500ms debounce, batched writes
+#### Milestone 3: Autosave Picks + Status Dots
+- Dual-doc pattern (picks_detail + picks_status)
+- Autosave with debounce
 - Real-time status listeners
-- Status dots per member per match: No pick / Picked / Locked
+- Status dots per member
+
+#### Milestone 4: Per-match Irreversible Locking
+- `lockPick` Cloud Function
+- Auto-lock at kickoff
+- Lock button + bulk lock
+- Security rules enforcement
+
+---
+
+## Upcoming Milestones (Restructured for General Rugby Predictor)
+
+## Phase 1: Universal Predictions & Single Source of Truth
+
+### Milestone 5: Universal Predictions Collection
+**Goal:** Replace pool-specific picks with universal predictions
+
+**In scope:**
+- Create `predictions/{userId_matchId}` collection (universal)
+- Update autosave logic to write to predictions
+- Update status tracking
+- Remove pool-specific picks collections
+
+**Out of scope:** Scoring engine, leaderboards
 
 **Done looks like:**
-- Editing pick updates status immediately and reflects to other users
-- Pick details never leak to other users pre-lock
+- Predictions stored globally, not per pool
+- Autosave writes to universal predictions collection
+- Data model ready for universal scoring
 
-### Kickoff prompt
+### Milestone 6: Universal Scoring Engine
+**Goal:** Implement scoring that updates `user_tournament_stats` (single source of truth)
+
+**In scope:**
+- Create `user_tournament_stats/{tournamentId_userId}` collection with full schema:
+  * Aggregate scoring: `totalPoints`, `correctWinners`, `exactScores`
+  * Rebuild safety: `scoredMatchCount`, `lastScoredMatchId`, `pointsByRound`
+  * Tiebreaker: `lastLockedPredictionAt` (set when predictions lock)
+- Pure scoring functions (unit tested) from existing SCORING.md
+- Cloud Function `onMatchFinalized`:
+  * Fetch all predictions for match
+  * Compute points per prediction (winner, margin accuracy)
+  * Update `predictions/{userId_matchId}` with scoring fields
+  * Update `user_tournament_stats` with all fields including rebuild safety fields
+- Admin UI to mark match final + enter result
+- Idempotency via `scoring_runs/{matchId}` + `scoredMatchCount`/`lastScoredMatchId` for partial-run detection
+
+**Out of scope:** Leaderboards (built in Phase 2)
+
+**Done looks like:**
+- Match result entry triggers universal scoring
+- Each user has ONE score in `user_tournament_stats`
+- `scoredMatchCount`, `lastScoredMatchId`, `pointsByRound` populated correctly
+- Tests verify scoring is universal and identical for all users
+- Tests verify idempotency (re-running doesn't double-count)
+- Scoring engine updates both predictions and user_tournament_stats
+
+**Kickoff prompt:**
 ```
-Six Nations predictor, Milestone 3: Autosave picks + status dots. M0–M2 done
-(auth, pools, fixtures, pick UI). Specs in docs/DATA_MODEL.md and
-docs/SECURITY_RULES.md.
+Rugby predictor, Milestone 6: Universal Scoring Engine.
+M0–M5 done. This is the most critical milestone.
 
 In scope:
-- Dual-doc write pattern: picks_detail (private) + picks_status (public)
-- 500ms debounced autosave, batched writes to Firestore
-- Load existing picks on page load
-- onSnapshot listeners for other members' status
-- Status dots: No pick / Picked / Locked
-- Security rules: only self can read own picks_detail; picks_status readable
-  by pool members
+- user_tournament_stats/{tournamentId_userId} collection (SINGLE SOURCE OF TRUTH)
+  with rebuild safety fields: scoredMatchCount, lastScoredMatchId, pointsByRound
+- Pure scoring function (no Firestore imports) following docs/SCORING.md
+- Jest tests for all scoring rules (winner gate, margin bonuses, draws)
+- Cloud Function onMatchFinalized:
+  * Fetch all predictions globally
+  * Compute points per prediction
+  * Update user_tournament_stats (totalPoints, correctWinners,
+    sumErrOnCorrectWinners, exactScores, scoredMatchCount,
+    lastScoredMatchId, pointsByRound)
+  * Write scoring_runs/{matchId} for idempotency
+- Admin UI to mark match final
+- Tiebreaker fields stored in user_tournament_stats:
+  * totalPoints, correctWinners, sumErrOnCorrectWinners, exactScores
+  * lastLockedPredictionAt (set when prediction locks, NOT when saved/edited)
+  * sumErrOnCorrectWinners: only incremented when winnerCorrect == true
+  * exactScores: only incremented when winnerCorrect == true AND err == 0
 
-Out of scope: locking logic, kickoff enforcement, reveal.
+Key constraint: scoring is universal and identical for all users.
+Verify this in tests. Also test idempotency — re-running must not double-count.
 
-Confirm the batched-write structure before writing the autosave hook.
+Read docs/SCORING.md and docs/DATA_MODEL.md before starting.
 ```
 
 ---
 
-## Milestone 4: Per-match irreversible locking
+## Phase 2: Dynamic Leaderboards
 
-- **Lock via Cloud Function** (client never writes `lockedAt` directly)
-- Function validates: pick complete, kickoff not passed, user owns pick
-- Per-match lock button + "Lock all completed picks" bulk action
-- **Auto-lock at kickoff** via scheduled function — unlocked-but-picked users get locked with their current pick
-- After lock, pick becomes read-only (UI + rules)
-- **Security rules update:** picks_detail/status writes blocked after kickoff; `lockedAt` only writable by Cloud Function service account
+### Milestone 7: User Attributes & Denormalization
+**Goal:** Add user attributes for dynamic pool filtering
+
+**In scope:**
+- Update `users/{userId}` schema:
+  * `countryCode?: string` (ISO 3166-1 alpha-2)
+  * `hemisphere?: "north" | "south"`
+  * `isPundit: boolean`
+- Profile edit UI for users to set country and hemisphere
+- Admin UI to flag users as pundits
+- Denormalize these fields into `user_tournament_stats` on score update
+- Composite indexes for filtering
+
+**Out of scope:** Leaderboard UI
 
 **Done looks like:**
-- Locked pick cannot be edited via client or direct Firestore write
-- Kickoff passes → all complete picks auto-locked, incomplete stay as "No pick"
-- Other users see lock status update in real-time
+- Users can set their country and hemisphere
+- `user_tournament_stats` has countryCode, hemisphere, isPundit for filtering
+- Ready for dynamic leaderboard queries
 
-### Kickoff prompt
+### Milestone 8: Global & Dynamic Leaderboards
+**Goal:** Build precomputed leaderboards with summary stats and cross-group comparison
+
+**In scope:**
+- `leaderboards/{leaderboardId}` collection with **tournament-scoped IDs**:
+  * `{tournamentId}__global`, `{tournamentId}__country_CA`, `{tournamentId}__hemisphere_north`, etc.
+- `leaderboards/{leaderboardId}/entries/{userId}` subcollection
+- Leaderboard metadata with **summary stats** for cross-group comparison:
+  * `avgPoints`, `medianPoints`, `top10AvgPoints`, `winnerPoints`, `percentileBuckets`
+- Leaderboard entries with **tie-aware ranks** and **percentile**:
+  * `rank` (tied users share same rank), `position` (sequential row number)
+  * `percentile` (0–100 within this leaderboard)
+- Cloud Function `updateLeaderboards(tournamentId)`:
+  * Triggered after scoring updates
+  * **Eager:** Global, hemisphere, pundits — updated immediately
+  * **Lazy:** Country leaderboards — via queue or on-read refresh
+  * Queries `user_tournament_stats` with filters
+  * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC, sumErrOnCorrectWinners ASC, exactScores DESC, lastLockedPredictionAt ASC
+  * Computes tie-aware ranks (equal metrics → same rank, next = rank + tied count)
+  * Computes summary stats (avg, median, percentiles) for leaderboard metadata
+  * Writes leaderboard entries with rank + percentile
+- Leaderboard UI:
+  * Global leaderboard (all users)
+  * Country selector (shows country leaderboard)
+  * Hemisphere toggle (North/South)
+  * Pundits leaderboard
+  * "Your score: 82 pts | Global: 14th | Canada: 2nd"
+  * Cross-group comparison: "North avg: 64 pts vs South avg: 58 pts"
+
+**Out of scope:** Manual pools, knockout
+
+**Done looks like:**
+- Users see their rank in multiple leaderboards
+- Same score everywhere, different ranks
+- Tied users share the same rank
+- Leaderboard metadata includes summary stats
+- Cross-group comparison possible via summary stats
+- Per-entry percentile enables normalized comparison
+- Leaderboards update automatically (eager for public, lazy for niche)
+
+**Kickoff prompt:**
 ```
-Six Nations predictor, Milestone 4: Per-match irreversible locking.
-M0–M3 done (auth, pools, fixtures, autosave picks, status dots).
-Specs in docs/PRODUCT.md (locking rules), docs/SECURITY_RULES.md.
+Rugby predictor, Milestone 8: Dynamic Leaderboards.
+M0–M7 done. Scoring engine and user_tournament_stats working.
 
 In scope:
-- Cloud Function `lockPick(userId, poolId, matchId)` that:
-  * verifies caller owns the pick
-  * verifies pick is complete
-  * verifies kickoffTime > now
-  * sets lockedAt atomically, writes to both picks_detail and picks_status
-- UI: per-match Lock button + "Lock all completed" bulk action
-- Scheduled Cloud Function that auto-locks complete-but-unlocked picks at
-  kickoff. Incomplete picks stay "No pick" (do NOT auto-fill).
-- Security rules: block client writes to lockedAt; block any writes to
-  picks_detail/picks_status once kickoffTime <= request.time
-- UI: locked picks render read-only
+- Precomputed leaderboards (global, country, hemisphere, pundits)
+- Tournament-scoped IDs: {tournamentId}__global, {tournamentId}__country_CA, etc.
+- Leaderboard metadata with summary stats: avgPoints, medianPoints,
+  top10AvgPoints, winnerPoints, percentileBuckets (p10/p25/p50/p75/p90)
+- Tie-aware ranking: equal metrics = same rank, next rank skips
+- Per-entry percentile (0–100 within leaderboard)
+- Cloud Function updateLeaderboards(tournamentId):
+  * Eager: global, hemisphere, pundits (immediate)
+  * Lazy: country leaderboards (queue or on-read)
+  * Queries user_tournament_stats with filters
+  * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC,
+    sumErrOnCorrectWinners ASC, exactScores DESC, lastLockedPredictionAt ASC
+  * Computes ranks, percentiles, and summary stats
+  * Writes leaderboards/{leaderboardId} + entries/{userId}
+- Leaderboard UI with tabs: Global, Country, Hemisphere, Pundits
+- Display: "Your score: 82 pts | Global: 14th | Canada: 2nd"
+- Cross-group comparison via summary stats (not raw rank)
 
-Out of scope: revealing other users' pick details, scoring.
+Key constraints:
+- Leaderboards show SAME score, different rank
+- No pool-specific points — ever
+- Cross-group comparison uses summary stats, not raw rank
+- Ties are sports-style (shared rank, next skips)
 
-Key constraint: locking is IRREVERSIBLE. Once lockedAt is set, no code path
-(including admin) can unset it in this milestone. Discuss the Cloud Function
-signature and scheduled function strategy before writing code.
+Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 ```
 
 ---
 
-## Milestone 5: Visibility rules (details reveal) + Compare view
+## Phase 3: Manual Pools & Pool Rankings
 
-- Pre-kickoff: reveal other user's pick details only if **both** users locked
-- Post-kickoff: all picks visible to all pool members
-- **Compare view:** click a match post-kickoff to see everyone's picks side-by-side
-- **Enforce in security rules**, not just UI — rules are the source of truth
+### Milestone 9: Manual Pools with Universal Scoring
+**Goal:** Refactor pools to use universal scoring (no pool-specific scoring)
+
+**In scope:**
+- Keep `pools/{poolId}` and `pools/{poolId}/members/{userId}`
+- Add `pools/{poolId}/entries/{userId}` (precomputed rankings)
+- Update join pool flow to work with universal predictions
+- Pool detail page:
+  * Shows pool members
+  * Shows pool leaderboard (same scores from user_tournament_stats, different ranks)
+  * Members can see each other's predictions (subject to lock/kickoff visibility)
+- Cloud Function `updatePoolLeaderboards`:
+  * Queries user_tournament_stats for pool members
+  * Computes tie-aware ranks within pool
+  * Computes per-entry percentile
+  * Writes pools/{poolId}/entries/{userId}
+  * Updated **lazily** (on read or via batch job), not synchronously after every match
+
+**Out of scope:** Pundit pools, knockout
 
 **Done looks like:**
-- Locked user sees other locked users' picks for that match
-- Non-locked user cannot read others' pick details via client OR direct Firestore query
-- Post-kickoff: all pool members see all picks
-- Compare view shows winner/margin/points (points come in M6)
-
-### Kickoff prompt
-```
-Six Nations predictor, Milestone 5: Visibility rules + compare view.
-M0–M4 done. Specs in docs/PRODUCT.md, docs/SECURITY_RULES.md.
-
-In scope:
-- Firestore rules for picks_detail reads:
-  * self: always
-  * pool member pre-kickoff: only if both self and target have locked
-  * pool member post-kickoff: always (once kickoffTime <= request.time)
-- Client reveal logic matching the rules (for UX; rules are the actual gate)
-- Compare view: post-kickoff match detail page showing all pool members'
-  picks side-by-side with winner + margin
-
-Out of scope: scoring, points display (M6).
-
-Test the rules with the Firebase rules emulator before shipping — I want
-unit tests for: self-read, locked-vs-unlocked pre-kickoff, cross-pool
-isolation, post-kickoff reveal.
-```
+- Pools work as friend/challenge groups
+- Pool rankings show same scores as global, different ranks
+- "You: 82 pts | Pool rank: 3/20 | Global rank: 142"
 
 ---
 
-## Milestone 6: Scoring engine + leaderboards
+## Phase 4: Pundit Pools & Beat X%
 
-- **Pure scoring functions first**, with unit tests (no Firestore dependency)
-- Admin entry UI to mark match final + enter actual winner/margin
-- Cloud Function trigger on match finalization:
-  - computes points per pick per `docs/SCORING.md`
-  - updates pick scoring fields
-  - updates round totals
-  - updates leaderboard totals
-  - writes `scoring_runs` doc for idempotency
-- Recalculation: admin can re-trigger scoring if a result is corrected
+### Milestone 10: Pundit Pools
+**Goal:** Special pools for expert pundits
+
+**In scope:**
+- Flag users as pundits (`isPundit: true`)
+- Pundit pool type with invite-only join
+- Pundits leaderboard (isPundit == true)
+- Fans vs Pundits comparison view:
+  * "You beat X% of pundits"
+  * "You beat X% of fans"
+- Admin UI to create pundit pools and invite members
+
+**Out of scope:** Knockout
 
 **Done looks like:**
-- Scoring unit tests pass for all edge cases in docs/SCORING.md
-- Entering a final score updates leaderboard correctly
-- Re-running scoring on same match is idempotent (no double-count)
-- Corrections update all downstream totals
-
-### Kickoff prompt
-```
-Six Nations predictor, Milestone 6: Scoring engine + leaderboards.
-M0–M5 done. Specs in docs/SCORING.md (locked scoring rules) and
-docs/DATA_MODEL.md.
-
-In scope:
-- Pure scoring function in functions/src/scoring.ts — takes (pick, actual)
-  returns points breakdown. No Firestore imports. Unit tested.
-- Jest tests covering every rule in docs/SCORING.md + edge cases
-  (exact margin, wrong winner, no pick, margin tie-break if applicable)
-- Admin UI for a designated admin uid to mark match final + enter result
-- Cloud Function onUpdate trigger on match doc that:
-  * calls pure scoring fn for each pick
-  * writes points back to picks_detail
-  * updates round_totals and leaderboard docs
-  * writes scoring_runs/{matchId}_{runId} for idempotency
-- Recalculation path: admin clicks "Recompute" → new scoring_run, deltas
-  applied correctly
-- Leaderboard view per pool
-
-Out of scope: push notifications, polish.
-
-Start with the pure function + tests. Do not touch Firestore triggers until
-tests are green.
-```
+- Pundits have special badge
+- Users can compare their score against pundits
+- Viral messaging: "Beat 78% of pundits!"
 
 ---
 
-## Milestone 7: Deployment + production hardening
+## Phase 5: Knockout Stages
 
-- Real Firebase project (dev + prod)
+### Milestone 11: Knockout Qualification
+**Goal:** Qualify top N users from global leaderboard for knockout bracket
+
+**In scope:**
+- `knockout_brackets/{bracketId}` collection
+- Qualification logic:
+  * Admin triggers qualification (e.g., "Top 128 from Global")
+  * Snapshot leaderboard at qualification time
+  * Create `knockout_brackets/{bracketId}/participants/{userId}`
+  * Seed participants by rank
+- Qualification is immutable (no recalculation after qualification)
+
+**Out of scope:** Bracket progression, elimination
+
+**Done looks like:**
+- Admin can qualify top N users for knockout
+- Participants locked in at qualification
+- UI shows "Qualified for Top 128 Knockout"
+
+### Milestone 12: Knockout Bracket Progression
+**Goal:** Track knockout bracket progression and standings
+
+**In scope:**
+- Knockout matches subset (optional — or use all tournament matches)
+- Bracket-specific scoring tracking:
+  * `knockoutPoints` per participant (points earned in knockout matches only)
+- Bracket UI:
+  * Shows participants sorted by knockoutPoints
+  * Shows "round of 128", "round of 64", etc.
+  * Elimination threshold (e.g., bottom 50% after each round)
+- Winner determination
+
+**Out of scope:** Custom bracket fixtures (use existing tournament matches for MVP)
+
+**Done looks like:**
+- Knockout bracket shows standings
+- Users eliminated as bracket progresses
+- Champion crowned at the end
+
+---
+
+## Phase 6: Viral Features & Polish
+
+### Milestone 13: Shareable Result Cards
+**Goal:** Viral sharing to grow user base
+
+**In scope:**
+- Generate shareable images:
+  * "I scored 82 points in Six Nations 2026"
+  * "Beat 89% of players globally"
+  * "Ranked 2nd in Canada"
+- Share to social media (Twitter, Facebook, etc.)
+- QR code or link for others to join
+
+**Out of scope:** Weekly winners, badges
+
+**Done looks like:**
+- Users can share their results
+- Shareable cards drive sign-ups
+
+### Milestone 14: Badges & Achievements (Non-Scoring)
+**Goal:** Add gamification without breaking universal scoring
+
+**In scope:**
+- Non-scoring badges:
+  * "Closest in Canada" (badge, not points)
+  * "Perfect Round" (all correct winners in a round)
+  * "Underdog Hero" (picked unlikely winner correctly)
+- Badge display on profile and leaderboards
+
+**Out of scope:** Badges affecting scores
+
+**Done looks like:**
+- Users collect badges
+- Badges add engagement without breaking scoring principles
+
+### Milestone 15: Polish & Production Hardening
+**Goal:** Ship to production
+
+**In scope:**
 - Environment config (`.env.production`)
 - Deploy rules, functions, hosting
-- Cloud Scheduler configured for auto-lock function
+- Cloud Scheduler for auto-lock
 - Error monitoring (Cloud Functions logs, Sentry optional)
-- Rate limits / abuse checks on Cloud Functions
+- Rate limits on Cloud Functions
+- Loading states, error boundaries
+- Mobile optimization
+- Accessibility pass
 
 **Done looks like:**
-- Production URL serves the app
-- Auto-lock scheduler firing correctly on real fixtures
-- Rules match emulator behavior
-- Logs visible for function errors
-
-### Kickoff prompt
-```
-Six Nations predictor, Milestone 7: Production deployment. M0–M6 working
-in emulators. Need to ship to real Firebase.
-
-In scope:
-- Create firebase project (or use existing), separate dev/prod if needed
-- .env.production and deployment envs
-- firebase deploy: rules, functions, hosting
-- Cloud Scheduler config for auto-lock function (cron matching match kickoffs
-  OR a single "check every 5 min during match windows" job)
-- Basic error monitoring — Cloud Functions logs at minimum
-- Smoke test checklist: sign in, create pool, join pool, pick, lock, kickoff
-  auto-lock, result entry, leaderboard update
-
-Out of scope: new features.
-
-Before deploying, audit: are there any test-mode rules left? Any hardcoded
-localhost URLs? Any emulator-only code paths?
-```
+- Production URL live
+- Auto-lock working on real fixtures
+- Monitoring in place
 
 ---
 
-## Milestone 8: Polish
+## Key Reminders for Future Milestones
 
-- Loading states, error boundaries, empty states
-- Mobile optimization (most predictor use is on phone during match)
-- Push/email reminders for unlocked picks near kickoff
-- Pool admin features (kick member, rename pool, delete pool)
-- Accessibility pass
+- **Always read docs/SCORING.md, docs/DATA_MODEL.md, docs/PRODUCT.md before starting**
+- **Test that scoring is universal and identical for all users**
+- **Verify same score appears in all leaderboards**
+- **Pools change rank, not score — never create pool-specific points**
+- **Precompute ranks, don't calculate on the fly**
+- **Use tournament-scoped leaderboard IDs** (`{tournamentId}__{type}`)
+- **Handle ties sports-style** (equal metrics = same rank, next skips)
+- **Cross-group comparison uses summary stats and percentile**, not raw rank
+- **Leaderboard updates use eager/lazy split** for scaling
+- **Scoring must be safely rebuildable** from scored predictions
 
-### Kickoff prompt
-```
-Six Nations predictor, Milestone 8: Polish. App is live. Need UX work.
+---
 
-In scope:
-- Loading states and skeletons for async data
-- Error boundaries around each route
-- Empty states (no pools, no fixtures, no picks)
-- Mobile layout audit — predictor is used on phone during matches
-- FCM push notifications: "Kickoff in 1hr, you haven't locked pick for X"
-- Pool admin actions: rename, kick member, delete
-- Accessibility: keyboard nav, screen reader labels, contrast
+## Summary
 
-Pick the two items with highest user-visible impact and start there.
-```
+- **Current:** Milestone 4 complete (pool-based picks with locking)
+- **Next:** Milestone 5–6 (universal predictions and scoring)
+- **MVP:** Through Milestone 8 (global + dynamic leaderboards)
+- **Full platform:** Through Milestone 12 (knockout stages)
+- **Viral growth:** Milestone 13–14 (sharing and badges)
+- **Production:** Milestone 15

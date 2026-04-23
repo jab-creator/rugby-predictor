@@ -37,7 +37,7 @@ test.describe('Pool detail page', () => {
 
     await expect(page.getByRole('heading', { name: 'Detail Test Pool' })).toBeVisible();
     await expect(page.getByText(joinCode)).toBeVisible();
-    await expect(page.getByText(/six-nations-2026/i)).toBeVisible();
+    await expect(page.getByText(/nations-championship-2026/i)).toBeVisible();
     await expect(page.getByText(/members.*1/i)).toBeVisible();
   });
 

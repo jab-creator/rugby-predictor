@@ -183,7 +183,7 @@ export default function RoundPage() {
 
         {/* Round Navigation */}
         <div className="flex gap-2 mb-8 overflow-x-auto">
-          {[1, 2, 3, 4, 5].map((r) => (
+          {[1, 2, 3, 4, 5, 6].map((r) => (
             <button
               key={r}
               onClick={() => router.push(`/pools/${poolId}/round/${r}`)}

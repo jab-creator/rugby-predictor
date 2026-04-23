@@ -1,7 +1,7 @@
 /**
  * Locking tests — M4: per-match irreversible locking.
  *
- * Uses the 'six-nations-test' season (kickoff times in 2099) so security
+ * Uses the 'nations-championship-test' season (kickoff times in 2099) so security
  * rules allow pick saves and lockPick accepts the lock pre-kickoff.
  *
  * Prerequisites: emulators running (`npm run emulators`), including the

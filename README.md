@@ -1,31 +1,73 @@
-# Six Nations Predictor
+# Rugby Predictor
 
-A modern, fast Six Nations predictor (SuperBru-style, but cleaner). Users join pools with friends and predict each match by picking **winner + margin**. Picks autosave, and users can **irreversibly lock** per match to reveal other locked picks.
+A modern rugby prediction platform that evolved from a Six Nations predictor into a general rugby prediction app. Features include:
 
-## Tech stack (locked)
+- **Public global competition** with dynamic leaderboards
+- **Dynamic pools** (country, hemisphere, fans vs pundits) calculated from user attributes
+- **Manual pools** for friends, challenges, and pundit communities
+- **Knockout stages** for top performers
+- **Universal scoring** — one score per user per tournament, compared across different contexts
+
+Users predict matches by picking **winner + margin**. Picks autosave, and users can **irreversibly lock** per match to reveal other locked picks.
+
+## Tech stack
 - Firebase Auth
 - Cloud Firestore
 - Cloud Functions
 - Cloud Scheduler
 - Firebase Hosting
-- Frontend: Next.js (recommended) or React SPA
+- Frontend: Next.js 14 + React 18 + TypeScript
 
 ## Specs (source of truth)
 - [Product rules](docs/PRODUCT.md)
-- [Scoring rules](docs/SCORING.md) **(locked)**
+- [Scoring rules](docs/SCORING.md) — **Universal scoring, no pool-specific scoring**
 - [Firestore data model](docs/DATA_MODEL.md)
 - [Security rules intent](docs/SECURITY_RULES.md)
 - [Build plan](docs/BUILD_PLAN.md)
 
+## Core Principles (CRITICAL)
+
+### 1. Single Source of Truth for Scoring
+- Each user has **ONE score per tournament**
+- Scores are **NOT different per pool**
+- Pools only change:
+  - Who you are compared against
+  - Your rank, **NOT your points**
+
+**✅ Correct:** Josh = 82 points everywhere; Global rank = 14, Canada rank = 2  
+**❌ Incorrect:** Josh has different points in different pools
+
+### 2. No Pool-Specific Scoring
+- Do **NOT** calculate points differently per pool
+- Do **NOT** give bonus points based on pool membership or ranking
+- Use **universal scoring rules** only
+- Optional: Add badges/achievements per pool (non-scoring)
+
+### 3. Dynamic Pools (Calculated, Not Stored)
+These pools are **calculated from user attributes**, not stored memberships:
+- Global leaderboard
+- Country leaderboards (e.g., Canada, England)
+- Hemisphere leaderboards (North/South)
+- Fans vs Pundits
+
+User fields used: `countryCode`, `hemisphere`, `isPundit`
+
+### 4. Manual Pools (Stored Membership)
+Only these require stored memberships:
+- Pundit pools
+- Private/friend pools
+- Challenge pools
+- Knockout qualification pools
+
 ## Locked decisions (do not change without explicit instruction)
-- Six Nations only
 - Predictions are **winner + margin** (margin 1–99)
 - Autosaved complete pick counts as **Picked**
 - Locking is **per match** and **irreversible**
 - Before kickoff, users can see other users' **status** (No pick / Picked / Locked)
 - Before kickoff, users can see other users’ **pick details** only if **both users locked** that match
 - After kickoff, everyone can see everyone’s picks for that match
-- Scoring system is universal and defined in `docs/SCORING.md`
+- **Scoring system is universal** — defined in `docs/SCORING.md` and applied identically across all contexts
+- **Pools change ranking context, NOT scoring rules**
 
 ## Local dev
 

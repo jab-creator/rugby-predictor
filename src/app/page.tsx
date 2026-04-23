@@ -14,7 +14,7 @@ export default function Home() {
       <main className="flex min-h-screen flex-col items-center justify-center p-24">
         <div className="text-center max-w-2xl">
           <h1 className="text-5xl font-bold mb-4">
-            🏉 Six Nations Predictor
+            🏉 Nations Championship Predictor
           </h1>
           <p className="text-xl text-gray-600 dark:text-gray-400 mb-8">
             Create pools, make predictions, compete with friends

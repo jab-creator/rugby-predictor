@@ -7,8 +7,8 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { 
-  SIX_NATIONS_2026,
-  SIX_NATIONS_2026_FIXTURES,
+  NATIONS_CHAMPIONSHIP_2026,
+  NATIONS_CHAMPIONSHIP_2026_FIXTURES,
   SeasonData,
   FixtureData 
 } from './fixtures';
@@ -70,32 +70,28 @@ async function isSeasonSeeded(seasonId: string): Promise<boolean> {
 }
 
 /**
- * Seed Six Nations 2026 into Firestore
+ * Seed Nations Championship 2026 into Firestore
  */
-export async function seedSixNations2026(): Promise<{ success: boolean; message: string }> {
+export async function seedNationsChampionship2026(): Promise<{ success: boolean; message: string }> {
   try {
-    // Check if already seeded
-    const alreadySeeded = await isSeasonSeeded(SIX_NATIONS_2026.id);
+    const alreadySeeded = await isSeasonSeeded(NATIONS_CHAMPIONSHIP_2026.id);
     
     if (alreadySeeded) {
       return {
         success: false,
-        message: 'Six Nations 2026 already seeded. Delete existing fixtures to re-seed.',
+        message: 'Nations Championship 2026 already seeded. Delete existing fixtures to re-seed.',
       };
     }
     
-    // Seed season
-    await seedSeason(SIX_NATIONS_2026);
-    
-    // Seed fixtures
-    await seedFixtures(SIX_NATIONS_2026.id, SIX_NATIONS_2026_FIXTURES);
+    await seedSeason(NATIONS_CHAMPIONSHIP_2026);
+    await seedFixtures(NATIONS_CHAMPIONSHIP_2026.id, NATIONS_CHAMPIONSHIP_2026_FIXTURES);
     
     return {
       success: true,
-      message: `Successfully seeded Six Nations 2026 with ${SIX_NATIONS_2026_FIXTURES.length} fixtures`,
+      message: `Successfully seeded Nations Championship 2026 with ${NATIONS_CHAMPIONSHIP_2026_FIXTURES.length} fixtures`,
     };
   } catch (error) {
-    console.error('Error seeding Six Nations 2026:', error);
+    console.error('Error seeding Nations Championship 2026:', error);
     return {
       success: false,
       message: `Failed to seed: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -104,9 +100,8 @@ export async function seedSixNations2026(): Promise<{ success: boolean; message:
 }
 
 /**
- * Seed all Six Nations seasons into Firestore
- * Currently only supports 2026
+ * Seed all seasons into Firestore
  */
 export async function seedAllSeasons(): Promise<{ success: boolean; message: string }> {
-  return await seedSixNations2026();
+  return await seedNationsChampionship2026();
 }

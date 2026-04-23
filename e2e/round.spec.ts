@@ -33,37 +33,43 @@ test.describe('Round view', () => {
     await deletePool(poolId);
   });
 
-  test('Round 1 shows 3 match cards', async ({ page }) => {
+  test('Round 1 shows 6 match cards', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
     await page.waitForLoadState('networkidle');
 
-    // Each match is wrapped in a container with border — count them
-    // We check for team names that appear in Round 1 fixtures
-    await expect(page.getByText('France')).toBeVisible();
-    await expect(page.getByText('Ireland')).toBeVisible();
+    // Check for team names that appear in Round 1 fixtures (all 12 teams play)
+    await expect(page.getByText('Japan')).toBeVisible();
     await expect(page.getByText('Italy')).toBeVisible();
-    await expect(page.getByText('Scotland')).toBeVisible();
-    await expect(page.getByText('England')).toBeVisible();
+    await expect(page.getByText('New Zealand')).toBeVisible();
+    await expect(page.getByText('France')).toBeVisible();
+    await expect(page.getByText('Australia')).toBeVisible();
+    await expect(page.getByText('Ireland')).toBeVisible();
+    await expect(page.getByText('Fiji')).toBeVisible();
     await expect(page.getByText('Wales')).toBeVisible();
+    await expect(page.getByText('South Africa')).toBeVisible();
+    await expect(page.getByText('England')).toBeVisible();
+    await expect(page.getByText('Argentina')).toBeVisible();
+    await expect(page.getByText('Scotland')).toBeVisible();
   });
 
   test('Round 1 shows team flag emojis', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
     await page.waitForLoadState('networkidle');
 
-    // Check for any flag emoji (each team has one)
     const content = await page.content();
-    // France 🇫🇷, Ireland 🇮🇪, Italy 🇮🇹, Scotland 🏴󠁧󠁢󠁳󠁣󠁴󠁿, England 🏴󠁧󠁢󠁥󠁮󠁧󠁿, Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿
+    // Check for a sample of flag emojis
     expect(content).toContain('🇫🇷');
     expect(content).toContain('🇮🇪');
+    expect(content).toContain('🇯🇵');
+    expect(content).toContain('🇿🇦');
   });
 
   test('round navigation tabs are visible with Round 1 active', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
     await page.waitForLoadState('networkidle');
 
-    // All 5 round tabs visible
-    for (let r = 1; r <= 5; r++) {
+    // All 6 round tabs visible
+    for (let r = 1; r <= 6; r++) {
       await expect(page.getByRole('button', { name: `Round ${r}` })).toBeVisible();
     }
 
@@ -87,15 +93,15 @@ test.describe('Round view', () => {
     await expect(round2Tab).toHaveClass(/bg-blue-600/);
   });
 
-  // Check that all 5 rounds have exactly 3 matches (fixture data completeness)
-  for (let round = 1; round <= 5; round++) {
-    test(`Round ${round} shows 3 matches`, async ({ page }) => {
+  // Check that all 6 rounds have exactly 6 matches (fixture data completeness)
+  for (let round = 1; round <= 6; round++) {
+    test(`Round ${round} shows 6 matches`, async ({ page }) => {
       await page.goto(`/pools/${poolId}/round/${round}`);
       await page.waitForLoadState('networkidle');
 
       // "Winning Margin" label appears once per match card
       const marginLabels = page.getByText('Winning Margin');
-      await expect(marginLabels).toHaveCount(3, { timeout: 10_000 });
+      await expect(marginLabels).toHaveCount(6, { timeout: 10_000 });
     });
   }
 
