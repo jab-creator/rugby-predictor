@@ -9,8 +9,10 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { createTestPool, deletePool } from './helpers/firestore';
+import { createTestPool, deletePool, getPrediction } from './helpers/firestore';
 import { TEST_USER, TEST_SEASON_ID } from './helpers/constants';
+
+const R1_NZL_FRA = `${TEST_SEASON_ID}-r1-NZL-FRA`;
 
 async function getCurrentUid(page: import('@playwright/test').Page): Promise<string> {
   return page.evaluate(() => {
@@ -18,6 +20,28 @@ async function getCurrentUid(page: import('@playwright/test').Page): Promise<str
     if (!key) throw new Error('No Firebase auth user found in localStorage');
     return JSON.parse(localStorage.getItem(key)!).uid as string;
   });
+}
+
+async function waitForRoundPage(
+  page: import('@playwright/test').Page,
+  round: number = 1,
+): Promise<void> {
+  await expect(page.getByRole('heading', { name: `Round ${round}` })).toBeVisible({ timeout: 15_000 });
+}
+
+function getFranceMatchCard(page: import('@playwright/test').Page) {
+  return page
+    .getByRole('button', { name: /France/i })
+    .first()
+    .locator('xpath=ancestor::div[contains(@class, "transition-colors")]');
+}
+
+function getFranceButton(page: import('@playwright/test').Page) {
+  return getFranceMatchCard(page).getByRole('button', { name: /France/i });
+}
+
+function getFranceMarginInput(page: import('@playwright/test').Page) {
+  return getFranceMatchCard(page).getByLabel('Winning Margin');
 }
 
 test.describe('MatchCard — winner selection', () => {
@@ -30,7 +54,7 @@ test.describe('MatchCard — winner selection', () => {
     const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
   });
 
   test.afterEach(async () => {
@@ -38,16 +62,16 @@ test.describe('MatchCard — winner selection', () => {
   });
 
   test('shows "Select winner and margin" before any picks', async ({ page }) => {
-    await expect(page.getByText('Select winner and margin').first()).toBeVisible();
+    await expect(getFranceMatchCard(page).getByText('Select winner and margin')).toBeVisible();
   });
 
   test('clicking France highlights it with a checkmark', async ({ page }) => {
     // Click the France team button
-    await page.getByRole('button', { name: /France/i }).first().click();
+    await getFranceButton(page).click();
 
     // The checkmark ✓ should appear next to France
     // The selected button gets border-blue-500 class
-    const franceBtn = page.getByRole('button', { name: /France/i }).first();
+    const franceBtn = getFranceButton(page);
     await expect(franceBtn).toHaveClass(/border-blue-500/);
 
     // Checkmark visible
@@ -55,7 +79,7 @@ test.describe('MatchCard — winner selection', () => {
   });
 
   test('clicking selected winner deselects it', async ({ page }) => {
-    const franceBtn = page.getByRole('button', { name: /France/i }).first();
+    const franceBtn = getFranceButton(page);
     await franceBtn.click(); // select
     await expect(franceBtn).toHaveClass(/border-blue-500/);
 
@@ -65,8 +89,8 @@ test.describe('MatchCard — winner selection', () => {
 
   test('selecting second team deselects first', async ({ page }) => {
     // In Round 1, first match is France vs Ireland
-    const franceBtn = page.getByRole('button', { name: /France/i }).first();
-    const irelandBtn = page.getByRole('button', { name: /Ireland/i }).first();
+    const franceBtn = getFranceButton(page);
+    const irelandBtn = getFranceMatchCard(page).getByRole('button', { name: /New Zealand/i });
 
     await franceBtn.click();
     await expect(franceBtn).toHaveClass(/border-blue-500/);
@@ -87,7 +111,7 @@ test.describe('MatchCard — margin input', () => {
     const pool = await createTestPool(uid, TEST_USER.displayName, 'Margin Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
   });
 
   test.afterEach(async () => {
@@ -95,42 +119,42 @@ test.describe('MatchCard — margin input', () => {
   });
 
   test('margin input accepts a valid value (7)', async ({ page }) => {
-    const marginInput = page.getByLabel('Winning Margin').first();
+    const marginInput = getFranceMarginInput(page);
     await marginInput.fill('7');
     await expect(marginInput).toHaveValue('7');
   });
 
   test('margin input rejects 0 (value stays empty)', async ({ page }) => {
-    const marginInput = page.getByLabel('Winning Margin').first();
+    const marginInput = getFranceMarginInput(page);
     await marginInput.fill('0');
     // handleMarginChange returns early for values outside 1-99
     await expect(marginInput).toHaveValue('');
   });
 
   test('margin input rejects 100', async ({ page }) => {
-    const marginInput = page.getByLabel('Winning Margin').first();
+    const marginInput = getFranceMarginInput(page);
     await marginInput.fill('100');
     await expect(marginInput).toHaveValue('');
   });
 
   test('margin input accepts boundary value 1', async ({ page }) => {
-    const marginInput = page.getByLabel('Winning Margin').first();
+    const marginInput = getFranceMarginInput(page);
     await marginInput.fill('1');
     await expect(marginInput).toHaveValue('1');
   });
 
   test('margin input accepts boundary value 99', async ({ page }) => {
-    const marginInput = page.getByLabel('Winning Margin').first();
+    const marginInput = getFranceMarginInput(page);
     await marginInput.fill('99');
     await expect(marginInput).toHaveValue('99');
   });
 
   test('shows "Pick Complete" after selecting winner and entering margin', async ({ page }) => {
-    await page.getByRole('button', { name: /France/i }).first().click();
-    await page.getByLabel('Winning Margin').first().fill('7');
+    await getFranceButton(page).click();
+    await getFranceMarginInput(page).fill('7');
 
     // Pick is complete but hasn't autosaved yet (debounce)
-    await expect(page.getByText(/pick complete/i).first()).toBeVisible({ timeout: 3_000 });
+    await expect(getFranceMatchCard(page).getByText(/pick complete/i)).toBeVisible({ timeout: 3_000 });
   });
 });
 
@@ -144,7 +168,7 @@ test.describe('MatchCard — autosave', () => {
     const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Debounce Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
   });
 
   test.afterEach(async () => {
@@ -153,43 +177,43 @@ test.describe('MatchCard — autosave', () => {
 
   test('autosave fires and shows "Saved" after picking winner and margin', async ({ page }) => {
     // Make a complete pick
-    await page.getByRole('button', { name: /France/i }).first().click();
-    await page.getByLabel('Winning Margin').first().fill('15');
+    await getFranceButton(page).click();
+    await getFranceMarginInput(page).fill('15');
 
     // Wait for "Saving..." to appear (debounce fires after 500ms)
-    await expect(page.getByText(/saving/i).first()).toBeVisible({ timeout: 4_000 });
+    await expect(getFranceMatchCard(page).getByText(/saving/i)).toBeVisible({ timeout: 4_000 });
 
     // Then wait for "Saved" confirmation
-    await expect(page.getByText(/saved/i).first()).toBeVisible({ timeout: 8_000 });
+    await expect(getFranceMatchCard(page).getByText(/saved/i)).toBeVisible({ timeout: 8_000 });
   });
 
   test('picks persist after page reload', async ({ page }) => {
     // Make and save a pick
-    await page.getByRole('button', { name: /France/i }).first().click();
-    await page.getByLabel('Winning Margin').first().fill('12');
+    await getFranceButton(page).click();
+    await getFranceMarginInput(page).fill('12');
 
     // Wait for save confirmation
-    await expect(page.getByText(/saved/i).first()).toBeVisible({ timeout: 8_000 });
+    await expect(getFranceMatchCard(page).getByText(/saved/i)).toBeVisible({ timeout: 8_000 });
 
     // Reload the page
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
 
     // France should still be selected (blue border)
-    const franceBtn = page.getByRole('button', { name: /France/i }).first();
+    const franceBtn = getFranceButton(page);
     await expect(franceBtn).toHaveClass(/border-blue-500/, { timeout: 8_000 });
 
     // Margin should be restored
-    const marginInput = page.getByLabel('Winning Margin').first();
+    const marginInput = getFranceMarginInput(page);
     await expect(marginInput).toHaveValue('12', { timeout: 8_000 });
   });
 
   test('picks persist after navigating away and back', async ({ page }) => {
     // Make and save a pick
-    await page.getByRole('button', { name: /France/i }).first().click();
-    await page.getByLabel('Winning Margin').first().fill('8');
+    await getFranceButton(page).click();
+    await getFranceMarginInput(page).fill('8');
 
-    await expect(page.getByText(/saved/i).first()).toBeVisible({ timeout: 8_000 });
+    await expect(getFranceMatchCard(page).getByText(/saved/i)).toBeVisible({ timeout: 8_000 });
 
     // Navigate to round 2 and back
     await page.getByRole('button', { name: 'Round 2' }).click();
@@ -197,11 +221,34 @@ test.describe('MatchCard — autosave', () => {
 
     await page.getByRole('button', { name: 'Round 1' }).click();
     await expect(page).toHaveURL(`/pools/${poolId}/round/1`);
-
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
 
     // Pick should be restored from Firestore
-    const franceBtn = page.getByRole('button', { name: /France/i }).first();
+    const franceBtn = getFranceButton(page);
     await expect(franceBtn).toHaveClass(/border-blue-500/, { timeout: 8_000 });
+  });
+
+  test('autosave writes the universal prediction document', async ({ page }) => {
+    const uid = await getCurrentUid(page);
+
+    await getFranceButton(page).click();
+    await getFranceMarginInput(page).fill('11');
+
+    await expect
+      .poll(async () => (await getPrediction(uid, R1_NZL_FRA))?.margin ?? null, {
+        timeout: 8_000,
+      })
+      .toBe(11);
+
+    const prediction = await getPrediction(uid, R1_NZL_FRA);
+    expect(prediction).not.toBeNull();
+    expect(prediction?.userId).toBe(uid);
+    expect(prediction?.matchId).toBe(R1_NZL_FRA);
+    expect(prediction?.tournamentId).toBe(TEST_SEASON_ID);
+    expect(prediction?.winner).toBe('FRA');
+    expect(prediction?.margin).toBe(11);
+    expect(prediction?.isComplete).toBe(true);
+    expect(prediction?.isLocked).toBe(false);
+    expect(prediction?.lockedAt).toBeNull();
   });
 });

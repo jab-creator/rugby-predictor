@@ -6,26 +6,86 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // --- picks_status helpers ---
+    function matchKickoffAt(tournamentId, matchId) {
+      return get(/databases/$(database)/documents/seasons/$(tournamentId)/matches/$(matchId)).data.kickoffAt;
+    }
 
-    // Client must never set lockedAt to a non-null value.
-    // The server (Admin SDK, bypasses rules) is the only writer of lockedAt.
+    // --- legacy picks_status / picks_detail helpers ---
+
     function clientLockedAtIsNull() {
       return request.resource.data.lockedAt == null;
     }
 
-    // Deny writes if the existing doc is already locked.
     function isNotLocked() {
       return resource == null || resource.data.lockedAt == null;
     }
 
-    // Deny writes at or after kickoff.
-    // kickoffAt is denormalized into the picks doc on first save.
     function isBeforeKickoff() {
       let kickoff = resource == null
         ? request.resource.data.kickoffAt
         : resource.data.kickoffAt;
       return request.time < kickoff;
+    }
+
+    // --- predictions helpers ---
+
+    function predictionKeysAreValid() {
+      return request.resource.data.keys().hasOnly([
+        'userId',
+        'matchId',
+        'tournamentId',
+        'winner',
+        'margin',
+        'kickoffAt',
+        'isComplete',
+        'isLocked',
+        'lockedAt',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function predictionCreatedAtIsImmutable() {
+      return resource == null || request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function predictionIdentityIsImmutable() {
+      return resource == null || (
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.matchId == resource.data.matchId &&
+        request.resource.data.tournamentId == resource.data.tournamentId
+      );
+    }
+
+    function predictionClientLockStateIsValid() {
+      return request.resource.data.lockedAt == null && request.resource.data.isLocked == false;
+    }
+
+    function predictionMarginIsValid() {
+      return request.resource.data.margin == null || (
+        request.resource.data.margin >= 1 &&
+        request.resource.data.margin <= 99
+      );
+    }
+
+    function predictionCompletenessIsValid() {
+      return request.resource.data.isComplete == (
+        request.resource.data.winner != null && request.resource.data.margin != null
+      );
+    }
+
+    function predictionNotLocked() {
+      return resource == null || (
+        resource.data.lockedAt == null &&
+        resource.data.isLocked != true
+      );
+    }
+
+    function predictionBeforeKickoff() {
+      return request.time < matchKickoffAt(
+        request.resource.data.tournamentId,
+        request.resource.data.matchId
+      );
     }
 
     // ---- Seasons / Matches (global fixtures) ----
@@ -46,9 +106,38 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // ---- Users ----
+    // User profile restrictions are not finalized yet; keep open for app auth flow and test setup.
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+
+    // ---- predictions ----
+    // Universal per-user, per-match predictions.
+    // Client can only edit their own, before kickoff, while unlocked.
+    match /predictions/{docId} {
+      allow read: if isSignedIn() && (
+        resource == null ||
+        resource.data.userId == request.auth.uid ||
+        request.time >= matchKickoffAt(resource.data.tournamentId, resource.data.matchId)
+      );
+
+      allow write: if
+        isSignedIn() &&
+        request.resource.data.userId == request.auth.uid &&
+        predictionKeysAreValid() &&
+        predictionCreatedAtIsImmutable() &&
+        predictionIdentityIsImmutable() &&
+        predictionClientLockStateIsValid() &&
+        predictionMarginIsValid() &&
+        predictionCompletenessIsValid() &&
+        predictionNotLocked() &&
+        predictionBeforeKickoff();
+    }
+
     // ---- picks_status ----
-    // Readable by any authenticated user (pool member check in M5).
-    // Writes: owner only, before kickoff, not already locked, lockedAt must be null.
+    // Temporary compatibility mirror during migration.
     match /pools/{poolId}/picks_status/{docId} {
       allow read: if true;
       allow write: if
@@ -60,8 +149,7 @@ service cloud.firestore {
     }
 
     // ---- picks_detail ----
-    // Same write constraints as picks_status.
-    // Read visibility (locked-both / after-kickoff rules) deferred to M5.
+    // Temporary compatibility mirror during migration.
     match /pools/{poolId}/picks_detail/{docId} {
       allow read: if true;
       allow write: if

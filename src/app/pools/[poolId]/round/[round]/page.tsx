@@ -254,6 +254,7 @@ export default function RoundPage() {
                     matchId={id}
                     match={match}
                     poolId={poolId}
+                    tournamentId={pool.seasonId}
                     lockedAt={lockedAt}
                     onLock={() => handleLockMatch(id)}
                   />

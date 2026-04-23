@@ -76,6 +76,26 @@ export interface PickDetail {
   totalPoints?: number;
 }
 
+export interface Prediction {
+  userId: string;
+  matchId: string;
+  tournamentId: string;
+  winner: TeamId | null;
+  margin: number | null; // 1-99
+  kickoffAt: Timestamp;
+  isComplete: boolean;
+  isLocked: boolean;
+  lockedAt: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  // Scoring fields (written by server after match final)
+  winnerCorrect?: boolean;
+  err?: number;
+  marginBonus?: number;
+  totalPoints?: number;
+}
+
+
 // ==================== USER TOURNAMENT STATS ====================
 
 export interface UserTournamentStats {

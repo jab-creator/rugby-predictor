@@ -1,50 +1,240 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { Timestamp } from 'firebase-admin/firestore';
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// ---------- Internal shared logic ----------
+const getPredictionDocId = (userId: string, matchId: string): string => `${userId}_${matchId}`;
+const getLegacyPickDocId = (matchId: string, userId: string): string => `${matchId}_${userId}`;
+
+interface LegacyStatus {
+  matchId: string;
+  userId: string;
+  isComplete: boolean;
+  lockedAt: admin.firestore.Timestamp | null;
+  updatedAt?: admin.firestore.Timestamp;
+  kickoffAt?: admin.firestore.Timestamp;
+}
+
+interface LegacyDetail {
+  pickedWinnerTeamId: string | null;
+  pickedMargin: number | null;
+  updatedAt?: admin.firestore.Timestamp;
+}
+
+interface PredictionDoc {
+  userId: string;
+  matchId: string;
+  tournamentId: string;
+  winner: string | null;
+  margin: number | null;
+  kickoffAt: admin.firestore.Timestamp;
+  isComplete: boolean;
+  isLocked: boolean;
+  lockedAt: admin.firestore.Timestamp | null;
+  createdAt: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+}
+
+type BatchWrite =
+  | {
+      type: 'set';
+      ref: admin.firestore.DocumentReference;
+      data: admin.firestore.DocumentData;
+      merge?: boolean;
+    }
+  | {
+      type: 'update';
+      ref: admin.firestore.DocumentReference;
+      data: admin.firestore.UpdateData<admin.firestore.DocumentData>;
+    };
 
 async function getPoolIdsForSeason(seasonId: string): Promise<string[]> {
   const snap = await db.collection('pools').where('seasonId', '==', seasonId).get();
-  return snap.docs.map(d => d.id);
+  return snap.docs.map((docSnap) => docSnap.id);
+}
+
+function buildPredictionFromLegacy(params: {
+  userId: string;
+  matchId: string;
+  tournamentId: string;
+  kickoffAt: admin.firestore.Timestamp;
+  legacyStatus: LegacyStatus;
+  legacyDetail: LegacyDetail;
+  lockedAt: admin.firestore.Timestamp | null;
+  createdAt?: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+}): PredictionDoc {
+  const {
+    userId,
+    matchId,
+    tournamentId,
+    kickoffAt,
+    legacyStatus,
+    legacyDetail,
+    lockedAt,
+    createdAt,
+    updatedAt,
+  } = params;
+
+  return {
+    userId,
+    matchId,
+    tournamentId,
+    winner: legacyDetail.pickedWinnerTeamId,
+    margin: legacyDetail.pickedMargin,
+    kickoffAt: legacyStatus.kickoffAt ?? kickoffAt,
+    isComplete: legacyStatus.isComplete,
+    isLocked: lockedAt !== null,
+    lockedAt,
+    createdAt: createdAt ?? legacyDetail.updatedAt ?? legacyStatus.updatedAt ?? updatedAt,
+    updatedAt,
+  };
+}
+
+async function commitBatchWrites(writes: BatchWrite[]): Promise<void> {
+  const BATCH_SIZE = 500;
+
+  for (let index = 0; index < writes.length; index += BATCH_SIZE) {
+    const batch = db.batch();
+
+    writes.slice(index, index + BATCH_SIZE).forEach((write) => {
+      if (write.type === 'set') {
+        if (write.merge) {
+          batch.set(write.ref, write.data, { merge: true });
+        } else {
+          batch.set(write.ref, write.data);
+        }
+        return;
+      }
+
+      batch.update(write.ref, write.data);
+    });
+
+    await batch.commit();
+  }
 }
 
 /**
- * Lock all complete, unlocked picks for a given match across the supplied pools.
- * Incomplete picks are left untouched per spec.
+ * Lock all complete, unlocked universal predictions for a given match.
+ * Legacy pool status docs are mirrored for UI compatibility during migration.
  */
 async function lockPicksForMatch(
+  seasonId: string,
   matchId: string,
   poolIds: string[],
+  kickoffAt: admin.firestore.Timestamp,
   now: admin.firestore.Timestamp
 ): Promise<{ locked: number }> {
-  const statusRefs: admin.firestore.DocumentReference[] = [];
+  const writes: BatchWrite[] = [];
+  const lockedPredictionIds = new Set<string>();
 
-  for (const poolId of poolIds) {
-    const snap = await db
-      .collection('pools')
-      .doc(poolId)
-      .collection('picks_status')
-      .where('matchId', '==', matchId)
-      .where('isComplete', '==', true)
-      .where('lockedAt', '==', null)
-      .get();
-    snap.docs.forEach(d => statusRefs.push(d.ref));
+  const unlockedPredictionsSnap = await db
+    .collection('predictions')
+    .where('matchId', '==', matchId)
+    .where('isComplete', '==', true)
+    .where('isLocked', '==', false)
+    .get();
+
+  unlockedPredictionsSnap.docs.forEach((predictionDoc) => {
+    lockedPredictionIds.add(predictionDoc.id);
+    writes.push({
+      type: 'set',
+      ref: predictionDoc.ref,
+      data: {
+        isLocked: true,
+        lockedAt: now,
+        updatedAt: now,
+      },
+      merge: true,
+    });
+  });
+
+  const statusSnap = await db
+    .collectionGroup('picks_status')
+    .where('matchId', '==', matchId)
+    .where('isComplete', '==', true)
+    .where('lockedAt', '==', null)
+    .get();
+
+  for (const statusDoc of statusSnap.docs) {
+    const legacyStatus = statusDoc.data() as LegacyStatus;
+    const predictionId = getPredictionDocId(legacyStatus.userId, matchId);
+    const predictionRef = db.collection('predictions').doc(predictionId);
+    const poolRef = statusDoc.ref.parent.parent;
+
+    if (!poolRef) {
+      continue;
+    }
+
+    if (!lockedPredictionIds.has(predictionId)) {
+      const predictionSnap = await predictionRef.get();
+
+      if (predictionSnap.exists) {
+        const prediction = predictionSnap.data() as Partial<PredictionDoc>;
+
+        if (prediction.lockedAt != null || prediction.isLocked === true) {
+          writes.push({
+            type: 'update',
+            ref: statusDoc.ref,
+            data: { lockedAt: prediction.lockedAt ?? now },
+          });
+          continue;
+        }
+
+        if (prediction.isComplete === true) {
+          lockedPredictionIds.add(predictionId);
+          writes.push({
+            type: 'set',
+            ref: predictionRef,
+            data: {
+              isLocked: true,
+              lockedAt: now,
+              updatedAt: now,
+            },
+            merge: true,
+          });
+        }
+      } else {
+        const legacyDetailRef = poolRef
+          .collection('picks_detail')
+          .doc(getLegacyPickDocId(matchId, legacyStatus.userId));
+        const legacyDetailSnap = await legacyDetailRef.get();
+
+        if (legacyDetailSnap.exists) {
+          const legacyDetail = legacyDetailSnap.data() as LegacyDetail;
+
+          if (legacyDetail.pickedWinnerTeamId != null && legacyDetail.pickedMargin != null) {
+            lockedPredictionIds.add(predictionId);
+            writes.push({
+              type: 'set',
+              ref: predictionRef,
+              data: buildPredictionFromLegacy({
+                userId: legacyStatus.userId,
+                matchId,
+                tournamentId: seasonId,
+                kickoffAt,
+                legacyStatus,
+                legacyDetail,
+                lockedAt: now,
+                updatedAt: now,
+              }),
+            });
+          }
+        }
+      }
+    }
+
+    writes.push({
+      type: 'update',
+      ref: statusDoc.ref,
+      data: { lockedAt: now },
+    });
   }
 
-  // Firestore batch limit is 500 writes
-  const BATCH_SIZE = 500;
-  for (let i = 0; i < statusRefs.length; i += BATCH_SIZE) {
-    const batch = db.batch();
-    statusRefs.slice(i, i + BATCH_SIZE).forEach(ref =>
-      batch.update(ref, { lockedAt: now })
-    );
-    await batch.commit();
-  }
-
-  return { locked: statusRefs.length };
+  await commitBatchWrites(writes);
+  return { locked: lockedPredictionIds.size };
 }
 
 // ---------- lockPick: user-initiated callable ----------
@@ -61,7 +251,6 @@ export const lockPick = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'poolId and matchId required');
   }
 
-  // Verify pool membership
   const memberSnap = await db
     .collection('pools').doc(poolId)
     .collection('members').doc(userId)
@@ -70,23 +259,20 @@ export const lockPick = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('permission-denied', 'Not a pool member');
   }
 
-  // Look up pool → seasonId → match → kickoffAt
   const poolSnap = await db.collection('pools').doc(poolId).get();
   if (!poolSnap.exists) {
     throw new functions.https.HttpsError('not-found', 'Pool not found');
   }
-  const { seasonId } = poolSnap.data()!;
+  const { seasonId } = poolSnap.data() as { seasonId: string };
 
-  const matchSnap = await db
-    .collection('seasons').doc(seasonId)
-    .collection('matches').doc(matchId)
-    .get();
+  const matchRef = db.collection('seasons').doc(seasonId).collection('matches').doc(matchId);
+  const matchSnap = await matchRef.get();
   if (!matchSnap.exists) {
     throw new functions.https.HttpsError('not-found', 'Match not found');
   }
 
-  const now = admin.firestore.Timestamp.now();
-  const kickoffAt: admin.firestore.Timestamp = matchSnap.data()!.kickoffAt;
+  const now = Timestamp.now();
+  const kickoffAt = matchSnap.data()!.kickoffAt as admin.firestore.Timestamp;
 
   if (kickoffAt.toMillis() <= now.toMillis()) {
     throw new functions.https.HttpsError(
@@ -95,28 +281,114 @@ export const lockPick = functions.https.onCall(async (data, context) => {
     );
   }
 
-  // Transaction: verify pick is complete + set lockedAt atomically
-  const statusDocId = `${matchId}_${userId}`;
-  const statusRef = db
+  const predictionRef = db.collection('predictions').doc(getPredictionDocId(userId, matchId));
+  const legacyDocId = getLegacyPickDocId(matchId, userId);
+  const legacyStatusRef = db
     .collection('pools').doc(poolId)
-    .collection('picks_status').doc(statusDocId);
+    .collection('picks_status').doc(legacyDocId);
+  const legacyDetailRef = db
+    .collection('pools').doc(poolId)
+    .collection('picks_detail').doc(legacyDocId);
 
-  await db.runTransaction(async tx => {
-    const statusSnap = await tx.get(statusRef);
-    if (!statusSnap.exists) {
-      throw new functions.https.HttpsError('not-found', 'No pick found for this match');
+  let lockedAtToReturn: admin.firestore.Timestamp | null = null;
+
+  await db.runTransaction(async (tx) => {
+    const predictionSnap = await tx.get(predictionRef);
+    const legacyStatusSnap = await tx.get(legacyStatusRef);
+    const legacyDetailSnap = await tx.get(legacyDetailRef);
+
+    const prediction = predictionSnap.exists
+      ? predictionSnap.data() as Partial<PredictionDoc>
+      : null;
+    const legacyStatus = legacyStatusSnap.exists
+      ? legacyStatusSnap.data() as LegacyStatus
+      : null;
+    const legacyDetail = legacyDetailSnap.exists
+      ? legacyDetailSnap.data() as LegacyDetail
+      : null;
+
+    if (prediction?.lockedAt != null || prediction?.isLocked === true) {
+      lockedAtToReturn = prediction.lockedAt ?? legacyStatus?.lockedAt ?? now;
+
+      if (legacyStatusSnap.exists && legacyStatus?.lockedAt == null && lockedAtToReturn != null) {
+        tx.update(legacyStatusRef, { lockedAt: lockedAtToReturn });
+      }
+      return;
     }
-    const status = statusSnap.data()!;
-    if (!status.isComplete) {
+
+    if (prediction?.isComplete === true) {
+      tx.set(predictionRef, {
+        isLocked: true,
+        lockedAt: now,
+        updatedAt: now,
+      }, { merge: true });
+
+      if (legacyStatusSnap.exists) {
+        tx.set(legacyStatusRef, { lockedAt: now }, { merge: true });
+      }
+
+      lockedAtToReturn = now;
+      return;
+    }
+
+    const legacyPickIsComplete =
+      legacyStatus?.isComplete === true &&
+      legacyDetail?.pickedWinnerTeamId != null &&
+      legacyDetail?.pickedMargin != null;
+
+    if (legacyStatus?.lockedAt != null) {
+      if (!legacyPickIsComplete) {
+        throw new functions.https.HttpsError('failed-precondition', 'Pick is not complete');
+      }
+
+      lockedAtToReturn = legacyStatus.lockedAt;
+      tx.set(
+        predictionRef,
+        buildPredictionFromLegacy({
+          userId,
+          matchId,
+          tournamentId: seasonId,
+          kickoffAt,
+          legacyStatus,
+          legacyDetail: legacyDetail as LegacyDetail,
+          lockedAt: legacyStatus.lockedAt,
+          createdAt: prediction?.createdAt,
+          updatedAt: legacyStatus.lockedAt,
+        }),
+        { merge: true }
+      );
+      return;
+    }
+
+    if (legacyPickIsComplete) {
+      tx.set(
+        predictionRef,
+        buildPredictionFromLegacy({
+          userId,
+          matchId,
+          tournamentId: seasonId,
+          kickoffAt,
+          legacyStatus: legacyStatus as LegacyStatus,
+          legacyDetail: legacyDetail as LegacyDetail,
+          lockedAt: now,
+          createdAt: prediction?.createdAt,
+          updatedAt: now,
+        }),
+        { merge: true }
+      );
+      tx.update(legacyStatusRef, { lockedAt: now });
+      lockedAtToReturn = now;
+      return;
+    }
+
+    if (predictionSnap.exists || legacyStatusSnap.exists || legacyDetailSnap.exists) {
       throw new functions.https.HttpsError('failed-precondition', 'Pick is not complete');
     }
-    if (status.lockedAt !== null) {
-      return; // Already locked — idempotent
-    }
-    tx.update(statusRef, { lockedAt: now });
+
+    throw new functions.https.HttpsError('not-found', 'No pick found for this match');
   });
 
-  return { lockedAt: now.toDate().toISOString() };
+  return { lockedAt: (lockedAtToReturn ?? now).toDate().toISOString() };
 });
 
 // ---------- onMatchWrite: schedule a Cloud Task for kickoff ----------
@@ -124,19 +396,16 @@ export const lockPick = functions.https.onCall(async (data, context) => {
 export const onMatchWrite = functions.firestore
   .document('seasons/{seasonId}/matches/{matchId}')
   .onWrite(async (change, context) => {
-    if (!change.after.exists) return; // Document deleted
+    if (!change.after.exists) return;
 
     const { seasonId, matchId } = context.params;
     const data = change.after.data()!;
-    const kickoffAt: admin.firestore.Timestamp = data.kickoffAt;
-    const now = admin.firestore.Timestamp.now();
+    const kickoffAt = data.kickoffAt as admin.firestore.Timestamp;
+    const now = Timestamp.now();
 
-    if (kickoffAt.toMillis() <= now.toMillis()) return; // Already past kickoff
+    if (kickoffAt.toMillis() <= now.toMillis()) return;
 
     if (process.env.FUNCTIONS_EMULATOR) {
-      // Cloud Tasks not available in emulator — call autoLockMatch directly to test:
-      //   POST http://localhost:5001/<project>/us-central1/autoLockMatch
-      //   Body: { matchId, seasonId }
       functions.logger.info(
         `[emulator] onMatchWrite: match ${matchId} kickoff ${kickoffAt.toDate().toISOString()}. ` +
         `To test auto-lock, POST { matchId: "${matchId}", seasonId: "${seasonId}" } to autoLockMatch.`
@@ -144,7 +413,6 @@ export const onMatchWrite = functions.firestore
       return;
     }
 
-    // Production: enqueue / replace a Cloud Task named autolock-{matchId}
     const { CloudTasksClient } = await import('@google-cloud/tasks');
     const client = new CloudTasksClient();
 
@@ -181,18 +449,13 @@ export const onMatchWrite = functions.firestore
   });
 
 // ---------- autoLockMatch: Cloud Tasks HTTP target ----------
-//
-// In production: Cloud Tasks delivers this with X-CloudTasks-QueueName header.
-// In emulator:   POST directly for testing — no auth required.
 
 export const autoLockMatch = functions.https.onRequest(async (req, res) => {
   const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 
-  if (!isEmulator) {
-    if (!req.headers['x-cloudtasks-queuename']) {
-      res.status(403).json({ error: 'Forbidden' });
-      return;
-    }
+  if (!isEmulator && !req.headers['x-cloudtasks-queuename']) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
   }
 
   if (req.method !== 'POST') {
@@ -206,11 +469,18 @@ export const autoLockMatch = functions.https.onRequest(async (req, res) => {
     return;
   }
 
-  const now = admin.firestore.Timestamp.now();
-  const poolIds = await getPoolIdsForSeason(seasonId);
-  const { locked } = await lockPicksForMatch(matchId, poolIds, now);
+  const matchSnap = await db.collection('seasons').doc(seasonId).collection('matches').doc(matchId).get();
+  if (!matchSnap.exists) {
+    res.status(404).json({ error: 'Match not found' });
+    return;
+  }
 
-  functions.logger.info(`autoLockMatch: locked ${locked} picks for match ${matchId}`);
+  const now = Timestamp.now();
+  const kickoffAt = matchSnap.data()!.kickoffAt as admin.firestore.Timestamp;
+  const poolIds = await getPoolIdsForSeason(seasonId);
+  const { locked } = await lockPicksForMatch(seasonId, matchId, poolIds, kickoffAt, now);
+
+  functions.logger.info(`autoLockMatch: locked ${locked} predictions for match ${matchId}`);
   res.json({ ok: true, locked });
 });
 

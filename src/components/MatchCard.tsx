@@ -11,11 +11,12 @@ interface MatchCardProps {
   match: Match;
   matchId: string;
   poolId: string;
+  tournamentId: string;
   lockedAt: Timestamp | null;
   onLock: () => Promise<void>;
 }
 
-export default function MatchCard({ match, matchId, poolId, lockedAt, onLock }: MatchCardProps) {
+export default function MatchCard({ match, matchId, poolId, tournamentId, lockedAt, onLock }: MatchCardProps) {
   const { user } = useAuth();
   const [selectedWinner, setSelectedWinner] = useState<TeamId | null>(null);
   const [margin, setMargin] = useState<string>('');
@@ -64,7 +65,7 @@ export default function MatchCard({ match, matchId, poolId, lockedAt, onLock }: 
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         setSaving(true);
-        await savePick(poolId, matchId, user.uid, selectedWinner, marginNum, match.kickoffAt);
+        await savePick(poolId, matchId, user.uid, tournamentId, selectedWinner, marginNum, match.kickoffAt);
         setLastSaved(new Date());
       } catch (error) {
         console.error('Error saving pick:', error);
@@ -78,7 +79,7 @@ export default function MatchCard({ match, matchId, poolId, lockedAt, onLock }: 
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [user, poolId, matchId, selectedWinner, margin, isLocked, match.kickoffAt]);
+  }, [user, poolId, matchId, tournamentId, selectedWinner, margin, isLocked, match.kickoffAt]);
 
   const formatKickoffTime = (kickoffAt: Timestamp) => {
     const date = kickoffAt.toDate ? kickoffAt.toDate() : new Date(kickoffAt as any);

@@ -31,9 +31,10 @@ export async function createTestUser(
   password: string,
   displayName: string,
 ): Promise<TestAuthUser> {
-  // 1. Create the user (may already exist — that's fine)
-  await fetch(
-    `${AUTH_EMULATOR_URL}/emulator/v1/projects/${PROJECT_ID}/accounts`,
+  // 1. Create the user through the Auth Emulator Identity Toolkit API.
+  // If the user already exists, sign-in below will still succeed.
+  const signUpRes = await fetch(
+    `${AUTH_EMULATOR_URL}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FAKE_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -41,12 +42,17 @@ export async function createTestUser(
         email,
         password,
         displayName,
-        emailVerified: true,
+        returnSecureToken: true,
       }),
     },
-  ).catch(() => {
-    // Network errors ignored — user may already exist
-  });
+  );
+
+  if (!signUpRes.ok) {
+    const signUpErr = await signUpRes.text();
+    if (!signUpErr.includes('EMAIL_EXISTS')) {
+      throw new Error(`Auth Emulator sign-up failed: ${signUpErr}`);
+    }
+  }
 
   // 2. Sign in to get tokens
   const signInRes = await fetch(

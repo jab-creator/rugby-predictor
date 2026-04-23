@@ -14,6 +14,7 @@ import {
   createTestPool,
   deletePool,
   getPickStatus,
+  getPrediction,
 } from './helpers/firestore';
 import {
   TEST_USER,
@@ -22,8 +23,8 @@ import {
   PROJECT_ID,
 } from './helpers/constants';
 
-// Deterministic match ID for Round 1, France vs Ireland (first match by kickoff)
-const R1_FRA_IRE = `${TEST_SEASON_ID}-r1-FRA-IRE`;
+// Deterministic match ID for the Round 1 fixture used by makeCompletePick(): New Zealand vs France.
+const R1_NZL_FRA = `${TEST_SEASON_ID}-r1-NZL-FRA`;
 
 async function getCurrentUid(page: import('@playwright/test').Page): Promise<string> {
   return page.evaluate(() => {
@@ -33,11 +34,41 @@ async function getCurrentUid(page: import('@playwright/test').Page): Promise<str
   });
 }
 
-/** Select France + enter margin 7 for the first match card, wait for autosave. */
+async function waitForRoundPage(
+  page: import('@playwright/test').Page,
+  round: number = 1,
+): Promise<void> {
+  await expect(page.getByRole('heading', { name: `Round ${round}` })).toBeVisible({ timeout: 15_000 });
+}
+
+function getFranceMatchCard(page: import('@playwright/test').Page) {
+  return page
+    .getByRole('button', { name: /France/i })
+    .first()
+    .locator('xpath=ancestor::div[contains(@class, "transition-colors")]');
+}
+
+function getFranceMarginInput(page: import('@playwright/test').Page) {
+  return getFranceMatchCard(page).getByLabel('Winning Margin');
+}
+
+/** Select France + enter margin 7 for the NZL/FRA card, then wait for the persisted prediction. */
 async function makeCompletePick(page: import('@playwright/test').Page): Promise<void> {
-  await page.getByRole('button', { name: /France/i }).first().click();
-  await page.getByLabel('Winning Margin').first().fill('7');
-  await expect(page.getByText(/saved/i).first()).toBeVisible({ timeout: 8_000 });
+  const userId = await getCurrentUid(page);
+  const poolId = page.url().match(/\/pools\/([^/]+)/)?.[1] ?? null;
+
+  await getFranceMatchCard(page).getByRole('button', { name: /France/i }).click();
+  await getFranceMarginInput(page).fill('7');
+
+  await expect
+    .poll(async () => {
+      const prediction = await getPrediction(userId, R1_NZL_FRA);
+      const status = poolId ? await getPickStatus(poolId, R1_NZL_FRA, userId) : null;
+      return prediction?.isComplete === true && status?.isComplete === true;
+    }, {
+      timeout: 8_000,
+    })
+    .toBe(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -53,7 +84,7 @@ test.describe('Lock button visibility', () => {
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Lock Visibility Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
   });
 
   test.afterEach(async () => {
@@ -91,7 +122,7 @@ test.describe('Locked state UI', () => {
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Locked UI Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await makeCompletePick(page);
     await page.getByRole('button', { name: /lock pick/i }).first().click();
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 15_000 });
@@ -104,26 +135,26 @@ test.describe('Locked state UI', () => {
 
   test('shows "Pick locked" banner', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 8_000 });
   });
 
   test('shows "Pick is final and cannot be changed"', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await expect(page.getByText(/pick is final/i).first()).toBeVisible({ timeout: 8_000 });
   });
 
   test('France button is disabled', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await expect(page.getByRole('button', { name: /France/i }).first()).toBeDisabled({ timeout: 8_000 });
   });
 
   test('margin input is disabled', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
-    await expect(page.getByLabel('Winning Margin').first()).toBeDisabled({ timeout: 8_000 });
+    await waitForRoundPage(page);
+    await expect(getFranceMarginInput(page)).toBeDisabled({ timeout: 8_000 });
   });
 });
 
@@ -141,7 +172,7 @@ test.describe('Lock persistence', () => {
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Lock Persist Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await makeCompletePick(page);
     await page.getByRole('button', { name: /lock pick/i }).first().click();
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 15_000 });
@@ -154,24 +185,24 @@ test.describe('Lock persistence', () => {
 
   test('locked pick remains locked after page reload', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 8_000 });
 
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 8_000 });
   });
 
   test('locked pick remains locked after navigating to another round and back', async ({ page }) => {
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
 
     await page.getByRole('button', { name: 'Round 2' }).click();
     await expect(page).toHaveURL(`/pools/${poolId}/round/2`);
 
     await page.getByRole('button', { name: 'Round 1' }).click();
     await expect(page).toHaveURL(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
 
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 8_000 });
   });
@@ -190,7 +221,7 @@ test.describe('Bulk lock button', () => {
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Bulk Lock Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
   });
 
   test.afterEach(async () => {
@@ -236,7 +267,7 @@ test.describe('autoLockMatch endpoint', () => {
     userId = await getCurrentUid(page);
     ({ poolId } = await createTestPool(userId, TEST_USER.displayName, 'AutoLock Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     // Pre-save a complete pick so autoLockMatch has something to lock
     await makeCompletePick(page);
   });
@@ -248,7 +279,7 @@ test.describe('autoLockMatch endpoint', () => {
   test('returns { ok: true, locked: 1 } for a pool with one complete pick', async ({ request }) => {
     const res = await request.post(
       `${FUNCTIONS_EMULATOR_URL}/${PROJECT_ID}/us-central1/autoLockMatch`,
-      { data: { matchId: R1_FRA_IRE, seasonId: TEST_SEASON_ID } }
+      { data: { matchId: R1_NZL_FRA, seasonId: TEST_SEASON_ID } }
     );
     expect(res.ok()).toBe(true);
     const body = await res.json() as { ok: boolean; locked: number };
@@ -256,27 +287,32 @@ test.describe('autoLockMatch endpoint', () => {
     expect(body.locked).toBeGreaterThanOrEqual(1);
   });
 
-  test('sets lockedAt in Firestore after the call', async ({ request }) => {
+  test('sets lockedAt on both compatibility status docs and universal predictions', async ({ request }) => {
     await request.post(
       `${FUNCTIONS_EMULATOR_URL}/${PROJECT_ID}/us-central1/autoLockMatch`,
-      { data: { matchId: R1_FRA_IRE, seasonId: TEST_SEASON_ID } }
+      { data: { matchId: R1_NZL_FRA, seasonId: TEST_SEASON_ID } }
     );
 
-    const status = await getPickStatus(poolId, R1_FRA_IRE, userId);
+    const status = await getPickStatus(poolId, R1_NZL_FRA, userId);
     expect(status).not.toBeNull();
     expect(status!.lockedAt).not.toBeNull();
+
+    const prediction = await getPrediction(userId, R1_NZL_FRA);
+    expect(prediction).not.toBeNull();
+    expect(prediction?.isLocked).toBe(true);
+    expect(prediction?.lockedAt).not.toBeNull();
   });
 
   test('after autoLockMatch the pick shows as locked in the UI', async ({ page, request }) => {
     await request.post(
       `${FUNCTIONS_EMULATOR_URL}/${PROJECT_ID}/us-central1/autoLockMatch`,
-      { data: { matchId: R1_FRA_IRE, seasonId: TEST_SEASON_ID } }
+      { data: { matchId: R1_NZL_FRA, seasonId: TEST_SEASON_ID } }
     );
 
     // The real-time subscription should update without a reload, but a reload
     // is the most reliable way to verify persistence.
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await waitForRoundPage(page);
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 8_000 });
   });
 
@@ -284,7 +320,7 @@ test.describe('autoLockMatch endpoint', () => {
     const call = () =>
       request.post(
         `${FUNCTIONS_EMULATOR_URL}/${PROJECT_ID}/us-central1/autoLockMatch`,
-        { data: { matchId: R1_FRA_IRE, seasonId: TEST_SEASON_ID } }
+        { data: { matchId: R1_NZL_FRA, seasonId: TEST_SEASON_ID } }
       );
 
     const first = await call();

@@ -11,16 +11,35 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { TeamId, PickStatus, PickDetail } from './types';
+import { Prediction, TeamId, PickStatus, PickDetail } from './types';
+
+const getPredictionDocId = (userId: string, matchId: string): string => `${userId}_${matchId}`;
+const getLegacyPickDocId = (matchId: string, userId: string): string => `${matchId}_${userId}`;
+
+function predictionToPickDetail(prediction: Prediction): PickDetail {
+  return {
+    matchId: prediction.matchId,
+    userId: prediction.userId,
+    pickedWinnerTeamId: prediction.winner,
+    pickedMargin: prediction.margin,
+    kickoffAt: prediction.kickoffAt,
+    updatedAt: prediction.updatedAt,
+    winnerCorrect: prediction.winnerCorrect,
+    err: prediction.err,
+    marginBonus: prediction.marginBonus,
+    totalPoints: prediction.totalPoints,
+  };
+}
 
 /**
- * Save a pick with batched writes to both picks_detail and picks_status
- * Implements dual-doc pattern per DATA_MODEL.md
+ * Save a pick to the universal predictions collection.
+ * Legacy pool pick docs are still mirrored for UI compatibility during migration.
  */
 export async function savePick(
   poolId: string,
   matchId: string,
   userId: string,
+  tournamentId: string,
   pickedWinnerTeamId: TeamId,
   pickedMargin: number,
   kickoffAt: Timestamp
@@ -31,12 +50,30 @@ export async function savePick(
 
   const batch = writeBatch(db);
 
-  const docId = `${matchId}_${userId}`;
-  const statusRef = doc(db, 'pools', poolId, 'picks_status', docId);
-  const detailRef = doc(db, 'pools', poolId, 'picks_detail', docId);
+  const predictionRef = doc(db, 'predictions', getPredictionDocId(userId, matchId));
+  const legacyDocId = getLegacyPickDocId(matchId, userId);
+  const statusRef = doc(db, 'pools', poolId, 'picks_status', legacyDocId);
+  const detailRef = doc(db, 'pools', poolId, 'picks_detail', legacyDocId);
+  const predictionSnap = await getDoc(predictionRef);
 
-  // lockedAt is intentionally excluded — only the server (Admin SDK) writes it.
-  // Security rules enforce that clients cannot set lockedAt to a non-null value.
+  batch.set(
+    predictionRef,
+    {
+      userId,
+      matchId,
+      tournamentId,
+      winner: pickedWinnerTeamId,
+      margin: pickedMargin,
+      kickoffAt,
+      isComplete: true,
+      isLocked: false,
+      lockedAt: null,
+      ...(predictionSnap.exists() ? {} : { createdAt: serverTimestamp() }),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
   batch.set(statusRef, {
     matchId,
     userId,
@@ -45,7 +82,7 @@ export async function savePick(
     finalizedAt: null,
     kickoffAt,
     updatedAt: serverTimestamp(),
-  } satisfies Omit<PickStatus, 'updatedAt'> & { updatedAt: unknown });
+  });
 
   batch.set(detailRef, {
     matchId,
@@ -54,21 +91,28 @@ export async function savePick(
     pickedMargin,
     kickoffAt,
     updatedAt: serverTimestamp(),
-  } satisfies Omit<PickDetail, 'updatedAt'> & { updatedAt: unknown });
+  });
 
   await batch.commit();
 }
 
 /**
- * Get user's pick detail for a specific match
+ * Get user's pick detail for a specific match.
+ * Prefers universal predictions, with fallback to legacy pool docs during migration.
  */
 export async function getUserPick(
   poolId: string,
   matchId: string,
   userId: string
 ): Promise<PickDetail | null> {
-  const detailDocId = `${matchId}_${userId}`;
-  const detailRef = doc(db, 'pools', poolId, 'picks_detail', detailDocId);
+  const predictionRef = doc(db, 'predictions', getPredictionDocId(userId, matchId));
+  const predictionSnap = await getDoc(predictionRef);
+
+  if (predictionSnap.exists()) {
+    return predictionToPickDetail(predictionSnap.data() as Prediction);
+  }
+
+  const detailRef = doc(db, 'pools', poolId, 'picks_detail', getLegacyPickDocId(matchId, userId));
   const detailSnap = await getDoc(detailRef);
 
   if (!detailSnap.exists()) {
@@ -88,7 +132,6 @@ export async function getUserPicksForRound(
 ): Promise<Map<string, PickDetail>> {
   const picks = new Map<string, PickDetail>();
 
-  // Load all picks for the user in this round
   for (const matchId of matchIds) {
     const pick = await getUserPick(poolId, matchId, userId);
     if (pick) {
@@ -100,7 +143,8 @@ export async function getUserPicksForRound(
 }
 
 /**
- * Get pick statuses for a specific match across all pool members
+ * Get pick statuses for a specific match across all pool members.
+ * Uses legacy pool status docs as a temporary compatibility layer.
  */
 export async function getMatchStatuses(
   poolId: string,
@@ -111,8 +155,8 @@ export async function getMatchStatuses(
   const snapshot = await getDocs(q);
 
   const statuses = new Map<string, PickStatus>();
-  snapshot.forEach((doc) => {
-    const status = doc.data() as PickStatus;
+  snapshot.forEach((statusDoc) => {
+    const status = statusDoc.data() as PickStatus;
     statuses.set(status.userId, status);
   });
 
@@ -126,7 +170,6 @@ export async function getMatchesStatuses(
   poolId: string,
   matchIds: string[]
 ): Promise<Map<string, Map<string, PickStatus>>> {
-  // Map of matchId -> Map of userId -> status
   const allStatuses = new Map<string, Map<string, PickStatus>>();
 
   for (const matchId of matchIds) {
@@ -138,8 +181,8 @@ export async function getMatchesStatuses(
 }
 
 /**
- * Subscribe to real-time pick status updates for a specific match
- * Returns unsubscribe function
+ * Subscribe to real-time pick status updates for a specific match.
+ * Uses legacy pool status docs as a temporary compatibility layer.
  */
 export function subscribeToMatchStatuses(
   poolId: string,
@@ -151,8 +194,8 @@ export function subscribeToMatchStatuses(
 
   const unsubscribe = onSnapshot(q, (snapshot) => {
     const statuses = new Map<string, PickStatus>();
-    snapshot.forEach((doc) => {
-      const status = doc.data() as PickStatus;
+    snapshot.forEach((statusDoc) => {
+      const status = statusDoc.data() as PickStatus;
       statuses.set(status.userId, status);
     });
     onUpdate(statuses);
@@ -163,7 +206,6 @@ export function subscribeToMatchStatuses(
 
 /**
  * Subscribe to real-time pick status updates for multiple matches
- * Returns unsubscribe function
  */
 export function subscribeToMatchesStatuses(
   poolId: string,
@@ -179,26 +221,46 @@ export function subscribeToMatchesStatuses(
     unsubscribes.push(unsubscribe);
   }
 
-  // Return combined unsubscribe function
   return () => {
-    unsubscribes.forEach((unsub) => unsub());
+    unsubscribes.forEach((unsubscribe) => unsubscribe());
   };
 }
 
 /**
- * Clear a pick (set to incomplete)
+ * Clear a pick (set to incomplete).
+ * Also clears the universal prediction record during migration.
  */
 export async function clearPick(
   poolId: string,
   matchId: string,
   userId: string,
+  tournamentId: string,
   kickoffAt: Timestamp
 ): Promise<void> {
   const batch = writeBatch(db);
+  const predictionRef = doc(db, 'predictions', getPredictionDocId(userId, matchId));
+  const predictionSnap = await getDoc(predictionRef);
+  const legacyDocId = getLegacyPickDocId(matchId, userId);
+  const statusRef = doc(db, 'pools', poolId, 'picks_status', legacyDocId);
+  const detailRef = doc(db, 'pools', poolId, 'picks_detail', legacyDocId);
 
-  const docId = `${matchId}_${userId}`;
-  const statusRef = doc(db, 'pools', poolId, 'picks_status', docId);
-  const detailRef = doc(db, 'pools', poolId, 'picks_detail', docId);
+  batch.set(
+    predictionRef,
+    {
+      userId,
+      matchId,
+      tournamentId,
+      winner: null,
+      margin: null,
+      kickoffAt,
+      isComplete: false,
+      isLocked: false,
+      lockedAt: null,
+      ...(predictionSnap.exists() ? {} : { createdAt: serverTimestamp() }),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 
   batch.set(statusRef, {
     matchId,

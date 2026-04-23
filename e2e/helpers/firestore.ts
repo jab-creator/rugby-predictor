@@ -6,7 +6,16 @@
 
 import { FIRESTORE_EMULATOR_URL, PROJECT_ID } from './constants';
 
+const admin = require('../../functions/node_modules/firebase-admin');
+
 const BASE = `${FIRESTORE_EMULATOR_URL}/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+
+process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
+
+function getAdminDb() {
+  const app = admin.apps.length > 0 ? admin.apps[0] : admin.initializeApp({ projectId: PROJECT_ID });
+  return admin.firestore(app);
+}
 
 // ---------------------------------------------------------------------------
 // Low-level helpers
@@ -175,8 +184,24 @@ export async function addPoolMember(
 
 /**
  * Delete a pool and all its subcollections.
+ * Also clears any universal predictions for the pool's members in that season so
+ * E2E tests remain isolated now that predictions are no longer pool-scoped.
  */
 export async function deletePool(poolId: string): Promise<void> {
+  const pool = await firestoreGet(`pools/${poolId}`);
+  const memberIds = await firestoreList(`pools/${poolId}/members`);
+  const seasonId = typeof pool?.seasonId === 'string' ? pool.seasonId : null;
+
+  if (seasonId) {
+    const matchIds = await firestoreList(`seasons/${seasonId}/matches`);
+    const adminDb = getAdminDb();
+    await Promise.all(
+      memberIds.flatMap((userId) =>
+        matchIds.map((matchId) => adminDb.doc(`predictions/${userId}_${matchId}`).delete())
+      )
+    );
+  }
+
   const subcollections = ['members', 'picks_status', 'picks_detail'];
   for (const sub of subcollections) {
     const ids = await firestoreList(`pools/${poolId}/${sub}`);
@@ -235,7 +260,19 @@ export async function getPickStatus(
   matchId: string,
   userId: string,
 ): Promise<Record<string, unknown> | null> {
-  return firestoreGet(`pools/${poolId}/picks_status/${matchId}_${userId}`);
+  const snapshot = await getAdminDb().doc(`pools/${poolId}/picks_status/${matchId}_${userId}`).get();
+  return snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
+}
+
+/**
+ * Read a universal prediction document.
+ */
+export async function getPrediction(
+  userId: string,
+  matchId: string,
+): Promise<Record<string, unknown> | null> {
+  const snapshot = await getAdminDb().doc(`predictions/${userId}_${matchId}`).get();
+  return snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
 }
 
 /**
