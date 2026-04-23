@@ -162,7 +162,8 @@ User's prediction for a match. **Universal across all contexts.**
   // Aggregate scoring
   totalPoints: number;
   correctWinners: number;
-  exactScores: number;       // count of err == 0
+  sumErrOnCorrectWinners: number;  // cumulative err across correct-winner predictions only
+  exactScores: number;             // count of predictions where err == 0 AND winnerCorrect
   
   // Rebuild safety — enables safe re-scoring and partial-run detection
   scoredMatchCount: number;        // how many matches have been scored for this user
@@ -179,6 +180,14 @@ User's prediction for a match. **Universal across all contexts.**
   updatedAt: Timestamp;
 }
 ```
+
+**`sumErrOnCorrectWinners`:** Only incremented when `winnerCorrect == true`. Represents
+cumulative margin error across all correct-winner predictions. Lower is better — a user
+who gets 5 winners correct with total err of 8 is ranked above one with 5 correct and
+total err of 15 (they were closer to the actual margins on their correct picks).
+
+**`exactScores`:** Counts predictions where `err == 0`. Used only as a tiebreaker
+(not part of `totalPoints`).
 
 **Security:** Read: all authenticated. Write: server only (Cloud Functions).
 
@@ -252,11 +261,13 @@ Precomputed leaderboard entry.
   // Copied from user_tournament_stats (universal — same in every leaderboard)
   totalPoints: number;
   correctWinners: number;
+  sumErrOnCorrectWinners: number;
   exactScores: number;
+  lastLockedPredictionAt?: Timestamp;
   
   // Rank within this leaderboard (tie-aware — see ranking rules below)
   rank: number;              // 1-indexed, tied users share the same rank
-  position?: number;         // row number for display (1, 2, 3, ... always unique)
+  position: number;          // row number for display (1, 2, 3, ... always unique)
   
   // Normalized context for cross-leaderboard comparison
   percentile?: number;       // 0–100 within this leaderboard (100 = best)
@@ -270,7 +281,12 @@ Precomputed leaderboard entry.
 
 **How ranks are computed:**
 - **NOT on the fly** — precomputed by Cloud Function after each match
-- Sort by: `totalPoints DESC`, then `correctWinners DESC`, then `exactScores DESC`, then `lastLockedPredictionAt ASC`
+- Sort by tiebreaker chain:
+  1. `totalPoints` DESC
+  2. `correctWinners` DESC
+  3. `sumErrOnCorrectWinners` ASC (lower cumulative error = better)
+  4. `exactScores` DESC
+  5. `lastLockedPredictionAt` ASC (earlier lock = better)
 - **Tie handling (sports-style):**
   - Users with identical metrics on all tiebreakers share the same `rank`
   - The next distinct user gets `rank = previous rank + count of tied users`
@@ -332,11 +348,13 @@ Precomputed pool leaderboard entry. **Same scoring as global, different ranking 
   // Copied from user_tournament_stats (SAME SCORE — universal)
   totalPoints: number;
   correctWinners: number;
+  sumErrOnCorrectWinners: number;
   exactScores: number;
+  lastLockedPredictionAt?: Timestamp;
   
-  // Rank within THIS pool (tie-aware, same rules as dynamic leaderboards)
+  // Rank within THIS pool (tie-aware, same tiebreaker chain as dynamic leaderboards)
   rank: number;
-  position?: number;
+  position: number;
   percentile?: number;       // 0–100 within this pool
   
   updatedAt: Timestamp;
@@ -431,7 +449,8 @@ When a match is finalized (`status: "final"`, `homeScore` and `awayScore` set):
    - Update `user_tournament_stats/{tournamentId_userId}`:
      - `totalPoints += prediction.totalPoints`
      - `correctWinners += 1` (if winner correct)
-     - `exactScores += 1` (if err == 0)
+     - `sumErrOnCorrectWinners += prediction.err` (only if winner correct)
+     - `exactScores += 1` (if winner correct AND err == 0)
      - `scoredMatchCount += 1`
      - `lastScoredMatchId = matchId`
      - `pointsByRound[match.round] += prediction.totalPoints`
@@ -485,13 +504,23 @@ predictions as the canonical fallback.
 
 1. `totalPoints` DESC
 2. `correctWinners` DESC
-3. `exactScores` DESC
-4. `lastLockedPredictionAt` ASC (earlier lock wins)
+3. `sumErrOnCorrectWinners` ASC — lower cumulative error on correct picks is better
+4. `exactScores` DESC
+5. `lastLockedPredictionAt` ASC — earlier lock wins
 
-**Definition of `lastLockedPredictionAt`:** The timestamp of the user's most recent
-prediction that transitioned to locked state (either via manual lock or auto-lock at
-kickoff). This is deterministic — it does not change after lock, and is unambiguous
-unlike "last prediction" which could mean last edit, last save, or last submission.
+**`sumErrOnCorrectWinners`:** Only incremented when `winnerCorrect == true` for a
+prediction. It is the sum of `err` values across all correct-winner predictions.
+Lower is better — it rewards users who were closer to actual margins on their correct
+picks. Two users with the same total points and same number of correct winners are
+separated by who was more precise on those correct picks.
+
+**`exactScores`:** Counts predictions where `err == 0` (perfect margin). Used only
+as a tiebreaker, not part of `totalPoints`.
+
+**`lastLockedPredictionAt`:** The timestamp of the user's most recent prediction that
+transitioned to locked state (either via manual lock or auto-lock at kickoff). This is
+deterministic — it does not change after lock, and is unambiguous unlike "last prediction"
+which could mean last edit, last save, or last submission.
 
 **If all tiebreakers are equal:** Users share the same `rank`. See ranking rules in
 the leaderboard entries section above.
@@ -561,6 +590,7 @@ pools/{poolId}/entries: (rank ASC)
   // Aggregate scoring
   totalPoints: number;
   correctWinners: number;
+  sumErrOnCorrectWinners: number;
   exactScores: number;
   
   // Rebuild safety

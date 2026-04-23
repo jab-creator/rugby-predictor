@@ -111,12 +111,16 @@ In scope:
 - Cloud Function onMatchFinalized:
   * Fetch all predictions globally
   * Compute points per prediction
-  * Update user_tournament_stats (totalPoints, correctWinners, exactScores,
-    scoredMatchCount, lastScoredMatchId, pointsByRound)
+  * Update user_tournament_stats (totalPoints, correctWinners,
+    sumErrOnCorrectWinners, exactScores, scoredMatchCount,
+    lastScoredMatchId, pointsByRound)
   * Write scoring_runs/{matchId} for idempotency
 - Admin UI to mark match final
-- Tiebreaker field: lastLockedPredictionAt (set when prediction locks,
-  NOT when prediction is saved/edited)
+- Tiebreaker fields stored in user_tournament_stats:
+  * totalPoints, correctWinners, sumErrOnCorrectWinners, exactScores
+  * lastLockedPredictionAt (set when prediction locks, NOT when saved/edited)
+  * sumErrOnCorrectWinners: only incremented when winnerCorrect == true
+  * exactScores: only incremented when winnerCorrect == true AND err == 0
 
 Key constraint: scoring is universal and identical for all users.
 Verify this in tests. Also test idempotency — re-running must not double-count.
@@ -165,7 +169,7 @@ Read docs/SCORING.md and docs/DATA_MODEL.md before starting.
   * **Eager:** Global, hemisphere, pundits — updated immediately
   * **Lazy:** Country leaderboards — via queue or on-read refresh
   * Queries `user_tournament_stats` with filters
-  * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC, exactScores DESC, lastLockedPredictionAt ASC
+  * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC, sumErrOnCorrectWinners ASC, exactScores DESC, lastLockedPredictionAt ASC
   * Computes tie-aware ranks (equal metrics → same rank, next = rank + tied count)
   * Computes summary stats (avg, median, percentiles) for leaderboard metadata
   * Writes leaderboard entries with rank + percentile
@@ -204,7 +208,8 @@ In scope:
   * Eager: global, hemisphere, pundits (immediate)
   * Lazy: country leaderboards (queue or on-read)
   * Queries user_tournament_stats with filters
-  * Sorts by tiebreaker chain including lastLockedPredictionAt
+  * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC,
+    sumErrOnCorrectWinners ASC, exactScores DESC, lastLockedPredictionAt ASC
   * Computes ranks, percentiles, and summary stats
   * Writes leaderboards/{leaderboardId} + entries/{userId}
 - Leaderboard UI with tabs: Global, Country, Hemisphere, Pundits

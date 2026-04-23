@@ -86,7 +86,8 @@ When a match is finalized:
 4. **Update `user_tournament_stats/{tournamentId_userId}`:**
    - `totalPoints += prediction.totalPoints`
    - `correctWinners += 1` (if winner correct)
-   - `exactScores += 1` (if err == 0)
+   - `sumErrOnCorrectWinners += prediction.err` (only if winner correct)
+   - `exactScores += 1` (if winner correct AND err == 0)
    - `scoredMatchCount += 1`
    - `lastScoredMatchId = matchId`
    - `pointsByRound[match.round] += prediction.totalPoints`
@@ -132,7 +133,25 @@ When testing scoring:
 - Verify rank changes based on comparison group, not score
 - Verify wrong winner = 0 points (strict gate)
 - Verify max points: 20 (non-draw with correct winner and err 0-2), 10 (draw with err 0-2)
+- Verify `sumErrOnCorrectWinners` only incremented when `winnerCorrect == true`
+- Verify `exactScores` only incremented when `winnerCorrect == true` AND `err == 0`
 - Example: Josh = 82 points everywhere; Global rank = 14, Canada rank = 2
+
+### Tiebreaker Order
+
+Leaderboard ranking uses this tiebreaker chain (see DATA_MODEL.md for full details):
+1. `totalPoints` DESC
+2. `correctWinners` DESC
+3. `sumErrOnCorrectWinners` ASC (lower cumulative error = better)
+4. `exactScores` DESC
+5. `lastLockedPredictionAt` ASC (earlier lock = better)
+
+Test scenarios:
+- Same points, different `correctWinners` → higher correctWinners wins
+- Same `correctWinners`, different `sumErrOnCorrectWinners` → lower sumErr wins
+- Same `sumErr`, different `exactScores` → higher exactScores wins
+- Full tie on all above → `lastLockedPredictionAt` breaks it (earlier wins)
+- Identical on all fields → users share the same rank
 
 ### Idempotency & Rebuild Safety
 
