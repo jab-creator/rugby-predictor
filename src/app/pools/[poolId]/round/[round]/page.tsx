@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { getPool, getMatchesForRound, getPoolMembers } from '@/lib/pools';
 import { subscribeToMatchesStatuses } from '@/lib/picks';
 import { lockPick, lockAllCompletedPicks, getLockableMatchIds } from '@/lib/locks';
+import { finalizeMatchResult } from '@/lib/results';
+import { TEAM_NAMES } from '@/lib/fixtures';
 import { Pool, Match, PoolMember, PickStatus } from '@/lib/types';
 import Header from '@/components/Header';
 import MatchCard from '@/components/MatchCard';
@@ -16,6 +18,15 @@ interface MatchWithId {
   id: string;
   match: Match;
 }
+
+interface FinalizeFormState {
+  homeScore: string;
+  awayScore: string;
+  saving: boolean;
+  error: string;
+  success: string;
+}
+
 
 export default function RoundPage() {
   const { user, loading } = useAuth();
@@ -32,6 +43,7 @@ export default function RoundPage() {
   const [error, setError] = useState('');
   const [bulkLocking, setBulkLocking] = useState(false);
   const [bulkLockResult, setBulkLockResult] = useState<string>('');
+  const [resultForms, setResultForms] = useState<Record<string, FinalizeFormState>>({});
 
   useEffect(() => {
     if (!loading && !user) {
@@ -84,6 +96,20 @@ export default function RoundPage() {
       });
 
       setMatches(matchesData);
+      setResultForms(
+        Object.fromEntries(
+          matchesData.map(({ id, match }) => [
+            id,
+            {
+              homeScore: match.homeScore != null ? String(match.homeScore) : '',
+              awayScore: match.awayScore != null ? String(match.awayScore) : '',
+              saving: false,
+              error: '',
+              success: '',
+            },
+          ])
+        )
+      );
 
       const membersData = await getPoolMembers(poolId);
       setMembers(membersData);
@@ -92,6 +118,100 @@ export default function RoundPage() {
       setError('Failed to load round data');
     } finally {
       setLoadingData(false);
+    }
+  };
+
+
+  const getResultForm = (matchId: string, match: Match): FinalizeFormState => (
+    resultForms[matchId] ?? {
+      homeScore: match.homeScore != null ? String(match.homeScore) : '',
+      awayScore: match.awayScore != null ? String(match.awayScore) : '',
+      saving: false,
+      error: '',
+      success: '',
+    }
+  );
+
+  const updateResultForm = (matchId: string, updater: (current: FinalizeFormState) => FinalizeFormState) => {
+    setResultForms((prev) => {
+      const current = prev[matchId] ?? {
+        homeScore: '',
+        awayScore: '',
+        saving: false,
+        error: '',
+        success: '',
+      };
+
+      return {
+        ...prev,
+        [matchId]: updater(current),
+      };
+    });
+  };
+
+  const handleFinalizeMatch = async (matchId: string, match: Match) => {
+    if (!pool) return;
+
+    const form = getResultForm(matchId, match);
+    const homeScore = Number.parseInt(form.homeScore, 10);
+    const awayScore = Number.parseInt(form.awayScore, 10);
+
+    if (
+      Number.isNaN(homeScore) ||
+      Number.isNaN(awayScore) ||
+      homeScore < 0 ||
+      awayScore < 0
+    ) {
+      updateResultForm(matchId, (current) => ({
+        ...current,
+        error: 'Enter non-negative integer scores for both teams.',
+        success: '',
+      }));
+      return;
+    }
+
+    updateResultForm(matchId, (current) => ({
+      ...current,
+      saving: true,
+      error: '',
+      success: '',
+    }));
+
+    try {
+      const result = await finalizeMatchResult(pool.seasonId, matchId, homeScore, awayScore);
+
+      setMatches((prev) => prev.map((entry) => (
+        entry.id === matchId
+          ? {
+              ...entry,
+              match: {
+                ...entry.match,
+                status: 'final',
+                homeScore,
+                awayScore,
+                actualWinner: result.actualWinner as Match['actualWinner'],
+                actualMargin: result.actualMargin,
+              },
+            }
+          : entry
+      )));
+
+      updateResultForm(matchId, (current) => ({
+        ...current,
+        homeScore: String(homeScore),
+        awayScore: String(awayScore),
+        saving: false,
+        error: '',
+        success: result.scored ? 'Match finalized and scored.' : 'Match was already finalized.',
+      }));
+    } catch (err) {
+      console.error('Error finalizing match:', err);
+      updateResultForm(matchId, (current) => ({
+        ...current,
+        saving: false,
+        error: err instanceof Error ? err.message : 'Failed to finalize match',
+        success: '',
+      }));
     }
   };
 
@@ -123,6 +243,7 @@ export default function RoundPage() {
   const lockableCount = user
     ? getLockableMatchIds(matchStatuses, user.uid).length
     : 0;
+  const isPoolAdmin = pool != null && user?.uid === pool.createdBy;
 
   if (loading || loadingData) {
     return (
@@ -247,6 +368,7 @@ export default function RoundPage() {
               const statuses = matchStatuses.get(id) || new Map();
               const userStatus = user ? statuses.get(user.uid) : undefined;
               const lockedAt = userStatus?.lockedAt ?? null;
+              const resultForm = getResultForm(id, match);
 
               return (
                 <div key={id} className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6">
@@ -258,6 +380,87 @@ export default function RoundPage() {
                     lockedAt={lockedAt}
                     onLock={() => handleLockMatch(id)}
                   />
+
+                  {isPoolAdmin && (
+                    <div className="mt-6 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                            Admin result entry
+                          </h3>
+                          <p className="text-sm text-amber-800/80 dark:text-amber-200/80 mt-1">
+                            Enter the final score to close predictions and score this match for every user.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-end w-full lg:w-auto">
+                          <label className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                            {TEAM_NAMES[match.homeTeamId]} score
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={resultForm.homeScore}
+                              onChange={(e) => updateResultForm(id, (current) => ({
+                                ...current,
+                                homeScore: e.target.value,
+                                error: '',
+                                success: '',
+                              }))}
+                              disabled={resultForm.saving || match.status === 'final'}
+                              className="mt-1 w-full rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-900 px-3 py-2"
+                            />
+                          </label>
+
+                          <label className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                            {TEAM_NAMES[match.awayTeamId]} score
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={resultForm.awayScore}
+                              onChange={(e) => updateResultForm(id, (current) => ({
+                                ...current,
+                                awayScore: e.target.value,
+                                error: '',
+                                success: '',
+                              }))}
+                              disabled={resultForm.saving || match.status === 'final'}
+                              className="mt-1 w-full rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-900 px-3 py-2"
+                            />
+                          </label>
+
+                          <button
+                            onClick={() => handleFinalizeMatch(id, match)}
+                            disabled={resultForm.saving || match.status === 'final'}
+                            className="px-4 py-2 rounded-lg font-semibold text-sm bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {match.status === 'final'
+                              ? 'Finalized'
+                              : resultForm.saving
+                                ? 'Finalizing...'
+                                : 'Mark final'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {(resultForm.error || resultForm.success || match.status === 'final') && (
+                        <div className="mt-3 text-sm">
+                          {resultForm.error && (
+                            <p className="text-red-600 dark:text-red-400">{resultForm.error}</p>
+                          )}
+                          {!resultForm.error && resultForm.success && (
+                            <p className="text-emerald-700 dark:text-emerald-400">{resultForm.success}</p>
+                          )}
+                          {!resultForm.error && !resultForm.success && match.status === 'final' && (
+                            <p className="text-emerald-700 dark:text-emerald-400">
+                              Final result recorded. Correction flow is not implemented yet.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {members.length > 1 && (
                     <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">

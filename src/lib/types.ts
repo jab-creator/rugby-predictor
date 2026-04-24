@@ -27,6 +27,8 @@ export interface Match {
   status: MatchStatus;
   homeScore: number | null;
   awayScore: number | null;
+  actualWinner?: TeamId | null;
+  actualMargin?: number | null;
   updatedAt: Timestamp;
 }
 
@@ -170,10 +172,15 @@ export interface RoundScore {
 
 export interface ScoringRun {
   scoredAt: Timestamp;
-  scoringVersion: ScoringVersion;
-  seasonId: string;
-  round: number;
+  tournamentId: string;
   matchId: string;
+  predictionCount: number;
+  actualWinner: TeamId | null;
+  actualMargin: number;
+  result: {
+    homeScore: number;
+    awayScore: number;
+  };
 }
 
 // ==================== CLIENT-SIDE HELPERS ====================

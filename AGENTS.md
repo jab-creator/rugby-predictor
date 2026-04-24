@@ -19,6 +19,19 @@
 - Existing composite index supports auto-lock query: `predictions(matchId, isComplete, isLocked)`.
 - Milestone 6 query readiness relies on single-field indexes for `matchId`, `userId`, and `tournamentId`; add composites only when combining filters/order clauses.
 
+## Universal scoring engine (M6)
+- `functions/src/scoring-engine.ts` is the server-side scoring boundary:
+  - `scoreFinalizedMatch()` reads universal `predictions`, writes per-prediction scoring fields, aggregates `user_tournament_stats`, and creates top-level tournament-scoped `scoring_runs/{tournamentId}__{matchId}` idempotency docs (while still recognizing legacy `scoring_runs/{matchId}` records).
+  - `upsertLastLockedPredictionAt()` is reused by manual lock and kickoff auto-lock so `lastLockedPredictionAt` stays tied to real lock time, not save time.
+  - `deriveMatchOutcome()` normalizes winner/margin from final scores for both the callable admin flow and Firestore-trigger fallback.
+- `functions/src/index.ts` now supports both result-entry paths:
+  - `finalizeMatch` callable lets the current pool creator UI mark a match final and score it immediately.
+  - `onMatchWrite` still schedules kickoff auto-lock for scheduled matches, and now also scores any match written as `status == "final"`.
+- Creator-facing admin result entry currently lives on `src/app/pools/[poolId]/round/[round]/page.tsx`; there is no separate admin role model yet, so follow-up work should tighten authorization before exposing broader admin tooling.
+- `src/components/MatchCard.tsx` treats finalized matches as read-only and shows a final-score banner so the round UI remains stable after scoring.
+- Playwright scoring coverage lives in `e2e/scoring.spec.ts`; it validates both creator-driven finalization and trigger idempotency.
+
+
 ## E2E testing notes
 - Demo project: `demo-six-nations-predictor`.
 - Emulator stack used in local validation: Auth `9099`, Firestore `8080`, Functions `5001`.

@@ -155,12 +155,12 @@ Test scenarios:
 
 ### Idempotency & Rebuild Safety
 
-Use `scoring_runs/{matchId}` to ensure scoring is only applied once per match.
+Use tournament-scoped `scoring_runs/{tournamentId}__{matchId}` docs to ensure scoring is only applied once per match.
 The `scoredMatchCount` and `lastScoredMatchId` fields on `user_tournament_stats`
 provide an additional check for partial-run detection (e.g., function retried mid-batch).
 
 **Score correction flow** (if a match result needs to be corrected):
-1. Delete the `scoring_runs/{matchId}` doc
+1. Delete the `scoring_runs/{tournamentId}__{matchId}` doc
 2. Re-score all predictions for that match with the corrected result
 3. Recompute `user_tournament_stats` — either:
    - Subtract old points + add new points (incremental), or

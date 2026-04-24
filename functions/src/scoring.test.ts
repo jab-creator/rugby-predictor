@@ -1,4 +1,4 @@
-import { marginBonus, scorePrediction, statsIncrement } from './scoring';
+import { applyScoreToAggregateStats, marginBonus, scorePrediction, statsIncrement } from './scoring';
 
 describe('marginBonus', () => {
   it.each([
@@ -108,3 +108,82 @@ describe('statsIncrement', () => {
     expect(inc.exactScore).toBe(false);
   });
 });
+
+
+describe('applyScoreToAggregateStats', () => {
+  it('adds a correct-winner score into aggregate totals and round points', () => {
+    const next = applyScoreToAggregateStats(
+      {
+        totalPoints: 12,
+        correctWinners: 1,
+        sumErrOnCorrectWinners: 4,
+        exactScores: 0,
+        scoredMatchCount: 1,
+        lastScoredMatchId: 'old-match',
+        pointsByRound: { '1': 12 },
+        lastLockedPredictionAtMillis: 1000,
+      },
+      { winnerCorrect: true, err: 2, marginBonus: 10, totalPoints: 20 },
+      2,
+      'match-2',
+      2000,
+    );
+
+    expect(next.totalPoints).toBe(32);
+    expect(next.correctWinners).toBe(2);
+    expect(next.sumErrOnCorrectWinners).toBe(6);
+    expect(next.exactScores).toBe(0);
+    expect(next.scoredMatchCount).toBe(2);
+    expect(next.lastScoredMatchId).toBe('match-2');
+    expect(next.pointsByRound).toEqual({ '1': 12, '2': 20 });
+    expect(next.lastLockedPredictionAtMillis).toBe(2000);
+  });
+
+  it('increments exactScores only for exact correct winners', () => {
+    const next = applyScoreToAggregateStats(
+      {
+        totalPoints: 17,
+        correctWinners: 1,
+        sumErrOnCorrectWinners: 5,
+        exactScores: 0,
+        scoredMatchCount: 1,
+        pointsByRound: { '1': 17 },
+      },
+      { winnerCorrect: true, err: 0, marginBonus: 10, totalPoints: 20 },
+      2,
+      'match-2b',
+    );
+
+    expect(next.correctWinners).toBe(2);
+    expect(next.sumErrOnCorrectWinners).toBe(5);
+    expect(next.exactScores).toBe(1);
+    expect(next.pointsByRound).toEqual({ '1': 17, '2': 20 });
+  });
+
+  it('keeps exactScores gated by correct winner and preserves later lockedAt', () => {
+    const next = applyScoreToAggregateStats(
+      {
+        totalPoints: 20,
+        correctWinners: 1,
+        sumErrOnCorrectWinners: 0,
+        exactScores: 1,
+        scoredMatchCount: 1,
+        pointsByRound: { '1': 20 },
+        lastLockedPredictionAtMillis: 5000,
+      },
+      { winnerCorrect: false, err: 3, marginBonus: 7, totalPoints: 0 },
+      1,
+      'match-1b',
+      2000,
+    );
+
+    expect(next.totalPoints).toBe(20);
+    expect(next.correctWinners).toBe(1);
+    expect(next.sumErrOnCorrectWinners).toBe(0);
+    expect(next.exactScores).toBe(1);
+    expect(next.scoredMatchCount).toBe(2);
+    expect(next.pointsByRound).toEqual({ '1': 20 });
+    expect(next.lastLockedPredictionAtMillis).toBe(5000);
+  });
+});
+

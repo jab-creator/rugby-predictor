@@ -45,6 +45,17 @@ export interface StatsIncrement {
   errOnCorrectWinner: number; // err value if winner correct, 0 otherwise
 }
 
+export interface AggregateStatsState {
+  totalPoints: number;
+  correctWinners: number;
+  sumErrOnCorrectWinners: number;
+  exactScores: number;
+  scoredMatchCount: number;
+  lastScoredMatchId?: string;
+  pointsByRound?: Record<string, number>;
+  lastLockedPredictionAtMillis?: number;
+}
+
 // ==================== Functions ====================
 
 export function marginBonus(err: number): number {
@@ -91,6 +102,38 @@ export function scorePrediction(
     err,
     marginBonus: bonus,
     totalPoints: winnerCorrect ? WINNER_PTS + bonus : 0,
+  };
+}
+
+
+/**
+ * Apply a scored prediction to aggregate user tournament stats.
+ */
+export function applyScoreToAggregateStats(
+  current: AggregateStatsState,
+  score: PredictionScore,
+  round: number,
+  matchId: string,
+  lockedAtMillis?: number,
+): AggregateStatsState {
+  const increment = statsIncrement(score);
+  const roundKey = String(round);
+  const nextLastLockedPredictionAtMillis = lockedAtMillis == null
+    ? current.lastLockedPredictionAtMillis
+    : Math.max(current.lastLockedPredictionAtMillis ?? 0, lockedAtMillis);
+
+  return {
+    totalPoints: current.totalPoints + increment.points,
+    correctWinners: current.correctWinners + (increment.correctWinner ? 1 : 0),
+    sumErrOnCorrectWinners: current.sumErrOnCorrectWinners + increment.errOnCorrectWinner,
+    exactScores: current.exactScores + (increment.exactScore ? 1 : 0),
+    scoredMatchCount: current.scoredMatchCount + 1,
+    lastScoredMatchId: matchId,
+    pointsByRound: {
+      ...(current.pointsByRound ?? {}),
+      [roundKey]: (current.pointsByRound?.[roundKey] ?? 0) + increment.points,
+    },
+    ...(nextLastLockedPredictionAtMillis == null ? {} : { lastLockedPredictionAtMillis: nextLastLockedPredictionAtMillis }),
   };
 }
 

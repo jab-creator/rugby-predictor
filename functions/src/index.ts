@@ -1,6 +1,14 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { Timestamp } from 'firebase-admin/firestore';
+import {
+  deriveMatchOutcome,
+  getLegacyScoringRunDocId,
+  getScoringRunDocId,
+  scoreFinalizedMatch,
+  upsertLastLockedPredictionAt,
+  type MatchScoringDoc,
+} from './scoring-engine';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -49,11 +57,6 @@ type BatchWrite =
       ref: admin.firestore.DocumentReference;
       data: admin.firestore.UpdateData<admin.firestore.DocumentData>;
     };
-
-async function getPoolIdsForSeason(seasonId: string): Promise<string[]> {
-  const snap = await db.collection('pools').where('seasonId', '==', seasonId).get();
-  return snap.docs.map((docSnap) => docSnap.id);
-}
 
 function buildPredictionFromLegacy(params: {
   userId: string;
@@ -123,12 +126,12 @@ async function commitBatchWrites(writes: BatchWrite[]): Promise<void> {
 async function lockPicksForMatch(
   seasonId: string,
   matchId: string,
-  poolIds: string[],
   kickoffAt: admin.firestore.Timestamp,
   now: admin.firestore.Timestamp
 ): Promise<{ locked: number }> {
   const writes: BatchWrite[] = [];
   const lockedPredictionIds = new Set<string>();
+  const lockedUserIds = new Set<string>();
 
   const unlockedPredictionsSnap = await db
     .collection('predictions')
@@ -138,7 +141,9 @@ async function lockPicksForMatch(
     .get();
 
   unlockedPredictionsSnap.docs.forEach((predictionDoc) => {
+    const prediction = predictionDoc.data() as PredictionDoc;
     lockedPredictionIds.add(predictionDoc.id);
+    lockedUserIds.add(prediction.userId);
     writes.push({
       type: 'set',
       ref: predictionDoc.ref,
@@ -185,6 +190,7 @@ async function lockPicksForMatch(
 
         if (prediction.isComplete === true) {
           lockedPredictionIds.add(predictionId);
+          lockedUserIds.add(legacyStatus.userId);
           writes.push({
             type: 'set',
             ref: predictionRef,
@@ -207,6 +213,7 @@ async function lockPicksForMatch(
 
           if (legacyDetail.pickedWinnerTeamId != null && legacyDetail.pickedMargin != null) {
             lockedPredictionIds.add(predictionId);
+            lockedUserIds.add(legacyStatus.userId);
             writes.push({
               type: 'set',
               ref: predictionRef,
@@ -234,6 +241,17 @@ async function lockPicksForMatch(
   }
 
   await commitBatchWrites(writes);
+  await Promise.all(
+    [...lockedUserIds].map((userId) =>
+      upsertLastLockedPredictionAt({
+        db,
+        tournamentId: seasonId,
+        userId,
+        lockedAt: now,
+      })
+    )
+  );
+
   return { locked: lockedPredictionIds.size };
 }
 
@@ -388,10 +406,118 @@ export const lockPick = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('not-found', 'No pick found for this match');
   });
 
-  return { lockedAt: (lockedAtToReturn ?? now).toDate().toISOString() };
+  const lockedAt = lockedAtToReturn ?? now;
+  await upsertLastLockedPredictionAt({
+    db,
+    tournamentId: seasonId,
+    userId,
+    lockedAt,
+  });
+
+  return { lockedAt: lockedAt.toDate().toISOString() };
 });
 
-// ---------- onMatchWrite: schedule a Cloud Task for kickoff ----------
+// ---------- finalizeMatch: callable admin/dev result entry ----------
+
+export const finalizeMatch = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const { seasonId, matchId, homeScore, awayScore } = data as {
+    seasonId?: string;
+    matchId?: string;
+    homeScore?: number;
+    awayScore?: number;
+  };
+
+  if (!seasonId || !matchId) {
+    throw new functions.https.HttpsError('invalid-argument', 'seasonId and matchId required');
+  }
+
+  if (
+    !Number.isInteger(homeScore) ||
+    !Number.isInteger(awayScore) ||
+    (homeScore as number) < 0 ||
+    (awayScore as number) < 0
+  ) {
+    throw new functions.https.HttpsError('invalid-argument', 'Scores must be non-negative integers');
+  }
+
+  const matchRef = db.collection('seasons').doc(seasonId).collection('matches').doc(matchId);
+  const scoringRunRef = db.collection('scoring_runs').doc(getScoringRunDocId(seasonId, matchId));
+  const legacyScoringRunRef = db.collection('scoring_runs').doc(getLegacyScoringRunDocId(matchId));
+  const now = Timestamp.now();
+
+  const finalizedMatch = await db.runTransaction(async (tx) => {
+    const matchSnap = await tx.get(matchRef);
+    if (!matchSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Match not found');
+    }
+
+    const existingMatch = matchSnap.data() as MatchScoringDoc;
+    const [existingScoringRun, existingLegacyScoringRun] = await Promise.all([
+      tx.get(scoringRunRef),
+      tx.get(legacyScoringRunRef),
+    ]);
+    const outcome = deriveMatchOutcome({
+      homeTeamId: existingMatch.homeTeamId,
+      awayTeamId: existingMatch.awayTeamId,
+      homeScore: homeScore as number,
+      awayScore: awayScore as number,
+    });
+
+    const requestedFinalMatch: MatchScoringDoc = {
+      ...existingMatch,
+      status: 'final',
+      homeScore: homeScore as number,
+      awayScore: awayScore as number,
+      actualWinner: outcome.actualWinner,
+      actualMargin: outcome.actualMargin,
+      updatedAt: now,
+    };
+
+    const sameFinalResult =
+      existingMatch.status === 'final' &&
+      existingMatch.homeScore === homeScore &&
+      existingMatch.awayScore === awayScore;
+
+    if (existingScoringRun.exists || existingLegacyScoringRun.exists) {
+      if (!sameFinalResult) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Match has already been scored. Correction flow is not implemented yet.'
+        );
+      }
+
+      return requestedFinalMatch;
+    }
+
+    tx.set(matchRef, requestedFinalMatch, { merge: true });
+    return requestedFinalMatch;
+  });
+
+  const scoringResult = await scoreFinalizedMatch({
+    db,
+    seasonId,
+    matchId,
+    match: finalizedMatch,
+    now,
+  });
+
+  return {
+    seasonId,
+    matchId,
+    homeScore,
+    awayScore,
+    actualWinner: finalizedMatch.actualWinner ?? null,
+    actualMargin: finalizedMatch.actualMargin ?? 0,
+    scored: scoringResult.scored,
+    skipped: scoringResult.skipped,
+  };
+});
+
+// ---------- onMatchWrite: score finalized matches and schedule kickoff auto-lock ----------
 
 export const onMatchWrite = functions.firestore
   .document('seasons/{seasonId}/matches/{matchId}')
@@ -399,10 +525,27 @@ export const onMatchWrite = functions.firestore
     if (!change.after.exists) return;
 
     const { seasonId, matchId } = context.params;
-    const data = change.after.data()!;
-    const kickoffAt = data.kickoffAt as admin.firestore.Timestamp;
+    const data = change.after.data() as MatchScoringDoc;
     const now = Timestamp.now();
 
+    if (data.status === 'final') {
+      const scoringResult = await scoreFinalizedMatch({
+        db,
+        seasonId,
+        matchId,
+        match: data,
+        now,
+      });
+
+      if (scoringResult.scored) {
+        functions.logger.info(
+          `Scored ${scoringResult.predictionsScored ?? 0} predictions for finalized match ${matchId}`
+        );
+      }
+      return;
+    }
+
+    const kickoffAt = data.kickoffAt as admin.firestore.Timestamp;
     if (kickoffAt.toMillis() <= now.toMillis()) return;
 
     if (process.env.FUNCTIONS_EMULATOR) {
@@ -477,8 +620,7 @@ export const autoLockMatch = functions.https.onRequest(async (req, res) => {
 
   const now = Timestamp.now();
   const kickoffAt = matchSnap.data()!.kickoffAt as admin.firestore.Timestamp;
-  const poolIds = await getPoolIdsForSeason(seasonId);
-  const { locked } = await lockPicksForMatch(seasonId, matchId, poolIds, kickoffAt, now);
+  const { locked } = await lockPicksForMatch(seasonId, matchId, kickoffAt, now);
 
   functions.logger.info(`autoLockMatch: locked ${locked} predictions for match ${matchId}`);
   res.json({ ok: true, locked });

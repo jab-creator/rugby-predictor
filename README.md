@@ -213,4 +213,12 @@ rugby-predictor/
 - [x] Firestore rules updated for universal predictions and index config added for match-scoped auto-lock queries
 - [x] Focused E2E coverage verifies universal prediction autosave and compatibility lock mirroring
 
-**Next:** Milestone 6 — Universal scoring engine using `predictions` as the single scoring input and `user_tournament_stats` as the single scoring output
+#### Milestone 6: ✅ Complete (Universal Scoring Engine)
+- [x] Finalized matches score top-level `predictions` and write aggregate `user_tournament_stats/{tournamentId_userId}` docs
+- [x] Tournament-scoped `scoring_runs/{tournamentId}__{matchId}` docs provide idempotency so repeated finalization does not double-count
+- [x] `lastLockedPredictionAt` is maintained from the existing lock flows for future tiebreakers
+- [x] Creator-facing round-page admin UI can enter final scores and trigger scoring without breaking the current pick UX
+- [x] Finalized matches render read-only in the existing round UI and show final-score state
+- [x] Unit + Playwright coverage verifies universal scoring and idempotent re-runs
+
+**Next:** Milestone 7 — User attributes and denormalization into `user_tournament_stats` for dynamic leaderboard filters

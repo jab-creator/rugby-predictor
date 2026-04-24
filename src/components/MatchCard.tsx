@@ -27,6 +27,8 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isLocked = lockedAt !== null;
+  const isFinal = match.status === 'final';
+  const isInteractionDisabled = isLocked || isFinal;
 
   // Load existing pick on mount
   useEffect(() => {
@@ -53,7 +55,7 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
       clearTimeout(saveTimeoutRef.current);
     }
 
-    if (!user || !selectedWinner || !margin || margin === '' || isLocked) {
+    if (!user || !selectedWinner || !margin || margin === '' || isInteractionDisabled) {
       return;
     }
 
@@ -79,7 +81,7 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [user, poolId, matchId, tournamentId, selectedWinner, margin, isLocked, match.kickoffAt]);
+  }, [user, poolId, matchId, tournamentId, selectedWinner, margin, isInteractionDisabled, match.kickoffAt]);
 
   const formatKickoffTime = (kickoffAt: Timestamp) => {
     const date = kickoffAt.toDate ? kickoffAt.toDate() : new Date(kickoffAt as any);
@@ -93,12 +95,12 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
   };
 
   const handleWinnerClick = (team: TeamId) => {
-    if (isLocked) return;
+    if (isInteractionDisabled) return;
     setSelectedWinner(team === selectedWinner ? null : team);
   };
 
   const handleMarginChange = (value: string) => {
-    if (isLocked) return;
+    if (isInteractionDisabled) return;
     const num = parseInt(value, 10);
     if (value === '' || (num >= 1 && num <= 99)) {
       setMargin(value);
@@ -106,7 +108,7 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
   };
 
   const handleLock = async () => {
-    if (locking || isLocked) return;
+    if (locking || isInteractionDisabled) return;
     setLockError('');
     setLocking(true);
     try {
@@ -120,36 +122,44 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
 
   const isPickComplete = selectedWinner !== null && margin !== '' && parseInt(margin, 10) >= 1;
 
-  const lockedBorderClass = isLocked
+  const cardBorderClass = isLocked
     ? 'border-blue-400 dark:border-blue-500 bg-blue-50/30 dark:bg-blue-900/10'
-    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600';
+    : isFinal
+      ? 'border-emerald-300 dark:border-emerald-500 bg-emerald-50/40 dark:bg-emerald-900/10'
+      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600';
 
   return (
-    <div className={`border-2 rounded-lg p-6 transition-colors ${lockedBorderClass}`}>
+    <div className={`border-2 rounded-lg p-6 transition-colors ${cardBorderClass}`}>
       {/* Kickoff Time */}
       <div className="text-center text-sm text-gray-500 dark:text-gray-400 mb-4">
         {formatKickoffTime(match.kickoffAt)}
       </div>
 
-      {/* Locked banner */}
-      {isLocked && (
+      {/* Locked / finalized banner */}
+      {isLocked ? (
         <div className="mb-4 px-3 py-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg text-center">
           <span className="text-sm font-semibold text-blue-700 dark:text-blue-300">
             🔒 Pick locked
           </span>
         </div>
-      )}
+      ) : isFinal && match.homeScore != null && match.awayScore != null ? (
+        <div className="mb-4 px-3 py-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg text-center">
+          <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+            ✅ Final score: {TEAM_NAMES[match.homeTeamId]} {match.homeScore}–{match.awayScore} {TEAM_NAMES[match.awayTeamId]}
+          </span>
+        </div>
+      ) : null}
 
       {/* Teams */}
       <div className="space-y-3 mb-6">
         <button
           onClick={() => handleWinnerClick(match.homeTeamId)}
-          disabled={isLocked}
+          disabled={isInteractionDisabled}
           className={`w-full p-4 rounded-lg border-2 transition-all ${
             selectedWinner === match.homeTeamId
               ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
               : 'border-gray-200 dark:border-gray-700'
-          } ${isLocked ? 'cursor-default opacity-80' : 'hover:border-gray-300 dark:hover:border-gray-600'}`}
+          } ${isInteractionDisabled ? 'cursor-default opacity-80' : 'hover:border-gray-300 dark:hover:border-gray-600'}`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -164,12 +174,12 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
 
         <button
           onClick={() => handleWinnerClick(match.awayTeamId)}
-          disabled={isLocked}
+          disabled={isInteractionDisabled}
           className={`w-full p-4 rounded-lg border-2 transition-all ${
             selectedWinner === match.awayTeamId
               ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
               : 'border-gray-200 dark:border-gray-700'
-          } ${isLocked ? 'cursor-default opacity-80' : 'hover:border-gray-300 dark:hover:border-gray-600'}`}
+          } ${isInteractionDisabled ? 'cursor-default opacity-80' : 'hover:border-gray-300 dark:hover:border-gray-600'}`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -196,9 +206,9 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
           placeholder="1-99"
           min="1"
           max="99"
-          disabled={isLocked}
+          disabled={isInteractionDisabled}
           className={`w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 text-center text-lg font-bold ${
-            isLocked ? 'opacity-70 cursor-default' : ''
+            isInteractionDisabled ? 'opacity-70 cursor-default' : ''
           }`}
         />
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center">
@@ -211,6 +221,10 @@ export default function MatchCard({ match, matchId, poolId, tournamentId, locked
         {isLocked ? (
           <div className="text-center text-sm text-blue-600 dark:text-blue-400 font-medium">
             Pick is final and cannot be changed
+          </div>
+        ) : isFinal ? (
+          <div className="text-center text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+            Match is final — predictions are closed and scoring has been applied
           </div>
         ) : (
           <>

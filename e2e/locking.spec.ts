@@ -15,6 +15,7 @@ import {
   deletePool,
   getPickStatus,
   getPrediction,
+  getUserTournamentStats,
 } from './helpers/firestore';
 import {
   TEST_USER,
@@ -23,8 +24,22 @@ import {
   PROJECT_ID,
 } from './helpers/constants';
 
-// Deterministic match ID for the Round 1 fixture used by makeCompletePick(): New Zealand vs France.
+// Deterministic Round 1 fixture IDs used by the test helpers below.
 const R1_NZL_FRA = `${TEST_SEASON_ID}-r1-NZL-FRA`;
+const R1_JPN_ITA = `${TEST_SEASON_ID}-r1-JPN-ITA`;
+
+function getTimestampMillis(value: unknown): number | null {
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'toMillis' in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === 'function'
+  ) {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+
+  return null;
+}
 
 async function getCurrentUid(page: import('@playwright/test').Page): Promise<string> {
   return page.evaluate(() => {
@@ -250,6 +265,71 @@ test.describe('Bulk lock button', () => {
 
     // First match card now shows the locked state
     await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 10_000 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lastLockedPredictionAt tracking
+// ---------------------------------------------------------------------------
+
+test.describe('lastLockedPredictionAt tracking', () => {
+  let poolId: string;
+  let userId: string;
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    userId = await getCurrentUid(page);
+    ({ poolId } = await createTestPool(userId, TEST_USER.displayName, 'Lock Timestamp Pool', TEST_SEASON_ID));
+    await page.goto(`/pools/${poolId}/round/1`);
+    await waitForRoundPage(page);
+  });
+
+  test.afterEach(async () => {
+    await deletePool(poolId);
+  });
+
+  test('updates only on real lock events, not autosave edits', async ({ page }) => {
+    await makeCompletePick(page);
+
+    expect(await getUserTournamentStats(TEST_SEASON_ID, userId)).toBeNull();
+
+    await page.getByRole('button', { name: /lock pick/i }).first().click();
+    await expect(page.getByText(/pick locked/i).first()).toBeVisible({ timeout: 15_000 });
+
+    await expect
+      .poll(async () => {
+        const prediction = await getPrediction(userId, R1_NZL_FRA);
+        const stats = await getUserTournamentStats(TEST_SEASON_ID, userId);
+        const predictionLockedAtMillis = getTimestampMillis(prediction?.lockedAt);
+        const statsLockedAtMillis = getTimestampMillis(stats?.lastLockedPredictionAt);
+
+        return predictionLockedAtMillis != null && predictionLockedAtMillis === statsLockedAtMillis
+          ? predictionLockedAtMillis
+          : null;
+      }, {
+        timeout: 8_000,
+      })
+      .not.toBeNull();
+
+    const lockedStats = await getUserTournamentStats(TEST_SEASON_ID, userId);
+    const lockedAtMillis = getTimestampMillis(lockedStats?.lastLockedPredictionAt);
+    expect(lockedAtMillis).not.toBeNull();
+
+    await page.getByRole('button', { name: /Japan/i }).first().click();
+    await page.locator(`#margin-${R1_JPN_ITA}`).fill('3');
+
+    await expect
+      .poll(async () => {
+        const prediction = await getPrediction(userId, R1_JPN_ITA);
+        return prediction?.margin;
+      }, {
+        timeout: 8_000,
+      })
+      .toBe(3);
+
+    const statsAfterAutosave = await getUserTournamentStats(TEST_SEASON_ID, userId);
+    expect(getTimestampMillis(statsAfterAutosave?.lastLockedPredictionAt)).toBe(lockedAtMillis);
   });
 });
 

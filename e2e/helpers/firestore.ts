@@ -17,6 +17,22 @@ function getAdminDb() {
   return admin.firestore(app);
 }
 
+function deriveOutcome(homeScore: number, awayScore: number, homeTeamId: string, awayTeamId: string) {
+  if (homeScore === awayScore) {
+    return { actualWinner: null, actualMargin: 0 };
+  }
+
+  return {
+    actualWinner: homeScore > awayScore ? homeTeamId : awayTeamId,
+    actualMargin: Math.abs(homeScore - awayScore),
+  };
+}
+
+function getScoringRunDocId(tournamentId: string, matchId: string): string {
+  return `${tournamentId}__${matchId}`;
+}
+
+
 // ---------------------------------------------------------------------------
 // Low-level helpers
 // ---------------------------------------------------------------------------
@@ -196,9 +212,10 @@ export async function deletePool(poolId: string): Promise<void> {
     const matchIds = await firestoreList(`seasons/${seasonId}/matches`);
     const adminDb = getAdminDb();
     await Promise.all(
-      memberIds.flatMap((userId) =>
-        matchIds.map((matchId) => adminDb.doc(`predictions/${userId}_${matchId}`).delete())
-      )
+      memberIds.flatMap((userId) => [
+        ...matchIds.map((matchId) => adminDb.doc(`predictions/${userId}_${matchId}`).delete()),
+        adminDb.doc(`user_tournament_stats/${seasonId}_${userId}`).delete(),
+      ])
     );
   }
 
@@ -274,6 +291,70 @@ export async function getPrediction(
   const snapshot = await getAdminDb().doc(`predictions/${userId}_${matchId}`).get();
   return snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
 }
+
+/**
+ * Read a user_tournament_stats document.
+ */
+export async function getUserTournamentStats(
+  tournamentId: string,
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  const snapshot = await getAdminDb().doc(`user_tournament_stats/${tournamentId}_${userId}`).get();
+  return snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
+}
+
+/**
+ * Read a top-level scoring run document for a match.
+ * Falls back to the legacy matchId-only key so pre-migration docs still read in tests.
+ */
+export async function getScoringRun(
+  tournamentId: string,
+  matchId: string,
+): Promise<Record<string, unknown> | null> {
+  const adminDb = getAdminDb();
+  const primarySnapshot = await adminDb.doc(`scoring_runs/${getScoringRunDocId(tournamentId, matchId)}`).get();
+  if (primarySnapshot.exists) {
+    return primarySnapshot.data() as Record<string, unknown>;
+  }
+
+  const legacySnapshot = await adminDb.doc(`scoring_runs/${matchId}`).get();
+  return legacySnapshot.exists ? (legacySnapshot.data() as Record<string, unknown>) : null;
+}
+
+/**
+ * Finalize a match directly in Firestore so the scoring trigger runs.
+ */
+export async function finalizeMatchDirectly(
+  seasonId: string,
+  matchId: string,
+  homeScore: number,
+  awayScore: number,
+): Promise<void> {
+  const matchRef = getAdminDb().doc(`seasons/${seasonId}/matches/${matchId}`);
+  const snapshot = await matchRef.get();
+  if (!snapshot.exists) {
+    throw new Error(`Match not found: ${seasonId}/${matchId}`);
+  }
+
+  const match = snapshot.data() as {
+    homeTeamId: string;
+    awayTeamId: string;
+  };
+  const outcome = deriveOutcome(homeScore, awayScore, match.homeTeamId, match.awayTeamId);
+
+  await matchRef.set(
+    {
+      status: 'final',
+      homeScore,
+      awayScore,
+      actualWinner: outcome.actualWinner,
+      actualMargin: outcome.actualMargin,
+      updatedAt: new Date(),
+    },
+    { merge: true },
+  );
+}
+
 
 /**
  * Seed a future-dated test season so pick writes succeed in tests.
