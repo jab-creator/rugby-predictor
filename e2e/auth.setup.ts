@@ -25,14 +25,13 @@ setup('create authenticated session', async ({ page }) => {
 
   // Navigate to app first so we can manipulate its localStorage
   await page.goto('/');
-  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('link', { name: /nations championship/i })).toBeVisible();
 
   console.log('[auth.setup] Injecting auth state into localStorage...');
   await injectAuthState(page, user);
 
   // Reload so Firebase SDK picks up the localStorage auth token
   await page.reload();
-  await page.waitForLoadState('networkidle');
 
   // Verify that the Firebase SDK recognised the stored auth and the UI updated
   // The Header component shows user.displayName when authenticated

@@ -8,6 +8,8 @@ export type TeamId =
 // Match status
 export type MatchStatus = 'scheduled' | 'live' | 'final';
 
+export type Hemisphere = 'north' | 'south';
+
 // Scoring version
 export type ScoringVersion = 'v1';
 
@@ -97,6 +99,22 @@ export interface Prediction {
   totalPoints?: number;
 }
 
+// ==================== USER PROFILES ====================
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL?: string;
+  countryCode?: string;
+  hemisphere?: Hemisphere;
+  isPundit: boolean;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+  lastSignInAt?: Timestamp;
+}
+
+
 
 // ==================== USER TOURNAMENT STATS ====================
 
@@ -123,7 +141,7 @@ export interface UserTournamentStats {
   displayName: string;
   photoURL?: string;
   countryCode?: string;
-  hemisphere?: 'north' | 'south';
+  hemisphere?: Hemisphere;
   isPundit: boolean;
 
   updatedAt: Timestamp;

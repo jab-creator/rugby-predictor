@@ -17,6 +17,138 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "user_tournament_stats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tournamentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalPoints",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "correctWinners",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sumErrOnCorrectWinners",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "exactScores",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "lastLockedPredictionAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "user_tournament_stats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tournamentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "countryCode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalPoints",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "correctWinners",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sumErrOnCorrectWinners",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "exactScores",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "lastLockedPredictionAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "user_tournament_stats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tournamentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "hemisphere",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalPoints",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "correctWinners",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sumErrOnCorrectWinners",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "exactScores",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "lastLockedPredictionAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "user_tournament_stats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tournamentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isPundit",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalPoints",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "correctWinners",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sumErrOnCorrectWinners",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "exactScores",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "lastLockedPredictionAt",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

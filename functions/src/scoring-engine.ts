@@ -26,12 +26,17 @@ interface PredictionDoc {
   lockedAt: admin.firestore.Timestamp | null;
 }
 
-interface UserProfileDoc {
+export interface UserProfileDoc {
+  uid?: string;
+  email?: string | null;
   displayName?: string | null;
   photoURL?: string | null;
   countryCode?: string | null;
   hemisphere?: 'north' | 'south' | null;
   isPundit?: boolean | null;
+  createdAt?: admin.firestore.Timestamp;
+  updatedAt?: admin.firestore.Timestamp;
+  lastSignInAt?: admin.firestore.Timestamp;
 }
 
 interface UserTournamentStatsDoc {
@@ -113,19 +118,85 @@ function aggregateStatsFromDoc(doc: Partial<UserTournamentStatsDoc> | null): Agg
   };
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+function normalizeCountryCode(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : undefined;
+}
+
+function normalizeHemisphere(value: unknown): 'north' | 'south' | undefined {
+  return value === 'north' || value === 'south' ? value : undefined;
+}
+
+function resolveStatsIdentityFields(params: {
+  userId: string;
+  existing?: Partial<UserTournamentStatsDoc> | null;
+  profile?: UserProfileDoc | null;
+}): Pick<UserTournamentStatsDoc, 'displayName' | 'photoURL' | 'countryCode' | 'hemisphere' | 'isPundit'> {
+  const { userId, existing, profile } = params;
+  const hasProfile = profile != null;
+  const displayName = nonEmptyString(profile?.displayName) ?? existing?.displayName ?? userId;
+  const photoURL = hasProfile
+    ? nonEmptyString(profile?.photoURL)
+    : nonEmptyString(existing?.photoURL);
+  const countryCode = hasProfile
+    ? normalizeCountryCode(profile?.countryCode)
+    : normalizeCountryCode(existing?.countryCode);
+  const hemisphere = hasProfile
+    ? normalizeHemisphere(profile?.hemisphere)
+    : normalizeHemisphere(existing?.hemisphere);
+  const isPundit = hasProfile
+    ? profile?.isPundit === true
+    : existing?.isPundit ?? false;
+
+  return {
+    displayName,
+    ...(photoURL ? { photoURL } : {}),
+    ...(countryCode ? { countryCode } : {}),
+    ...(hemisphere ? { hemisphere } : {}),
+    isPundit,
+  };
+}
+
+function buildUserTournamentStatsProfilePatch(params: {
+  userId: string;
+  existing?: Partial<UserTournamentStatsDoc> | null;
+  profile?: UserProfileDoc | null;
+  now: admin.firestore.Timestamp;
+}): admin.firestore.UpdateData<admin.firestore.DocumentData> {
+  const { now, ...rest } = params;
+  const resolved = resolveStatsIdentityFields(rest);
+
+  return {
+    displayName: resolved.displayName,
+    photoURL: resolved.photoURL ?? admin.firestore.FieldValue.delete(),
+    countryCode: resolved.countryCode ?? admin.firestore.FieldValue.delete(),
+    hemisphere: resolved.hemisphere ?? admin.firestore.FieldValue.delete(),
+    isPundit: resolved.isPundit,
+    updatedAt: now,
+  };
+}
+
 function buildUserTournamentStatsDoc(params: {
   tournamentId: string;
   userId: string;
   aggregate: AggregateStatsState;
-  lockedAt: admin.firestore.Timestamp | null;
   existing?: Partial<UserTournamentStatsDoc> | null;
   profile?: UserProfileDoc | null;
   now: admin.firestore.Timestamp;
 }): UserTournamentStatsDoc {
-  const { tournamentId, userId, aggregate, lockedAt, existing, profile, now } = params;
+  const { tournamentId, userId, aggregate, existing, profile, now } = params;
 
   const nextLockedAtMillis = aggregate.lastLockedPredictionAtMillis;
   const existingLockedAtMillis = timestampToMillis(existing?.lastLockedPredictionAt);
+  const identity = resolveStatsIdentityFields({ userId, existing, profile });
 
   return {
     id: getUserTournamentStatsDocId(tournamentId, userId),
@@ -145,28 +216,37 @@ function buildUserTournamentStatsDoc(params: {
             Math.max(existingLockedAtMillis ?? 0, nextLockedAtMillis ?? 0),
           ),
         }),
-    displayName:
-      profile?.displayName ??
-      existing?.displayName ??
-      userId,
-    ...(profile?.photoURL != null
-      ? { photoURL: profile.photoURL }
-      : existing?.photoURL != null
-        ? { photoURL: existing.photoURL }
-        : {}),
-    ...(profile?.countryCode != null
-      ? { countryCode: profile.countryCode }
-      : existing?.countryCode != null
-        ? { countryCode: existing.countryCode }
-        : {}),
-    ...(profile?.hemisphere != null
-      ? { hemisphere: profile.hemisphere }
-      : existing?.hemisphere != null
-        ? { hemisphere: existing.hemisphere }
-        : {}),
-    isPundit: profile?.isPundit ?? existing?.isPundit ?? false,
+    ...identity,
     updatedAt: now,
   };
+}
+
+export async function syncUserProfileToTournamentStats(params: {
+  db: admin.firestore.Firestore;
+  userId: string;
+  profile?: UserProfileDoc | null;
+  now?: admin.firestore.Timestamp;
+}): Promise<number> {
+  const { db, userId, profile } = params;
+  const now = params.now ?? Timestamp.now();
+  const statsSnapshot = await db.collection('user_tournament_stats').where('userId', '==', userId).get();
+
+  if (statsSnapshot.empty) {
+    return 0;
+  }
+
+  const batch = db.batch();
+  statsSnapshot.docs.forEach((statsDoc) => {
+    const existing = statsDoc.data() as Partial<UserTournamentStatsDoc>;
+    batch.set(
+      statsDoc.ref,
+      buildUserTournamentStatsProfilePatch({ userId, existing, profile: profile ?? null, now }),
+      { merge: true },
+    );
+  });
+
+  await batch.commit();
+  return statsSnapshot.size;
 }
 
 export function deriveMatchOutcome(match: Pick<MatchScoringDoc, 'homeScore' | 'awayScore' | 'homeTeamId' | 'awayTeamId'>): {
@@ -216,39 +296,24 @@ export async function upsertLastLockedPredictionAt(params: {
 
     tx.set(
       statsRef,
-      {
-        id: getUserTournamentStatsDocId(tournamentId, userId),
-        userId,
+      buildUserTournamentStatsDoc({
         tournamentId,
-        totalPoints: typeof existing?.totalPoints === 'number' ? existing.totalPoints : 0,
-        correctWinners: typeof existing?.correctWinners === 'number' ? existing.correctWinners : 0,
-        sumErrOnCorrectWinners:
-          typeof existing?.sumErrOnCorrectWinners === 'number' ? existing.sumErrOnCorrectWinners : 0,
-        exactScores: typeof existing?.exactScores === 'number' ? existing.exactScores : 0,
-        scoredMatchCount: typeof existing?.scoredMatchCount === 'number' ? existing.scoredMatchCount : 0,
-        ...(existing?.lastScoredMatchId ? { lastScoredMatchId: existing.lastScoredMatchId } : {}),
-        ...(existing?.pointsByRound ? { pointsByRound: existing.pointsByRound } : {}),
-        lastLockedPredictionAt: lockedAt,
-        displayName: profile?.displayName ?? existing?.displayName ?? userId,
-        ...(profile?.photoURL != null
-          ? { photoURL: profile.photoURL }
-          : existing?.photoURL != null
-            ? { photoURL: existing.photoURL }
-            : {}),
-        ...(profile?.countryCode != null
-          ? { countryCode: profile.countryCode }
-          : existing?.countryCode != null
-            ? { countryCode: existing.countryCode }
-            : {}),
-        ...(profile?.hemisphere != null
-          ? { hemisphere: profile.hemisphere }
-          : existing?.hemisphere != null
-            ? { hemisphere: existing.hemisphere }
-            : {}),
-        isPundit: profile?.isPundit ?? existing?.isPundit ?? false,
-        updatedAt: lockedAt,
-      },
-      { merge: true },
+        userId,
+        aggregate: {
+          totalPoints: typeof existing?.totalPoints === 'number' ? existing.totalPoints : 0,
+          correctWinners: typeof existing?.correctWinners === 'number' ? existing.correctWinners : 0,
+          sumErrOnCorrectWinners:
+            typeof existing?.sumErrOnCorrectWinners === 'number' ? existing.sumErrOnCorrectWinners : 0,
+          exactScores: typeof existing?.exactScores === 'number' ? existing.exactScores : 0,
+          scoredMatchCount: typeof existing?.scoredMatchCount === 'number' ? existing.scoredMatchCount : 0,
+          lastScoredMatchId: existing?.lastScoredMatchId,
+          pointsByRound: existing?.pointsByRound,
+          lastLockedPredictionAtMillis: lockedAt.toMillis(),
+        },
+        existing,
+        profile,
+        now: lockedAt,
+      }),
     );
   });
 }
@@ -358,7 +423,6 @@ export async function scoreFinalizedMatch(params: {
         tournamentId: seasonId,
         userId: prediction.userId,
         aggregate,
-        lockedAt: prediction.lockedAt,
         existing: entry?.existing ?? null,
         profile: entry?.profile ?? null,
         now,
@@ -367,7 +431,6 @@ export async function scoreFinalizedMatch(params: {
       tx.set(
         db.collection('user_tournament_stats').doc(getUserTournamentStatsDocId(seasonId, prediction.userId)),
         nextStats,
-        { merge: true },
       );
 
       if (entry) {

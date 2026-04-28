@@ -88,6 +88,59 @@ service cloud.firestore {
       );
     }
 
+    // --- user profile helpers ---
+
+    function userProfileKeysAreValid() {
+      return request.resource.data.keys().hasOnly([
+        'uid',
+        'email',
+        'displayName',
+        'photoURL',
+        'countryCode',
+        'hemisphere',
+        'isPundit',
+        'createdAt',
+        'updatedAt',
+        'lastSignInAt'
+      ]);
+    }
+
+    function userProfileUidIsValid(userId) {
+      return request.resource.data.uid == userId && (
+        resource == null ||
+        resource.data.uid == null ||
+        request.resource.data.uid == resource.data.uid
+      );
+    }
+
+    function userProfileCreatedAtIsImmutable() {
+      return resource == null ||
+        resource.data.createdAt == null ||
+        request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function userProfilePunditIsUnchanged() {
+      return resource == null
+        ? request.resource.data.isPundit == false
+        : resource.data.isPundit == null
+          ? request.resource.data.isPundit == false
+          : request.resource.data.isPundit == resource.data.isPundit;
+    }
+
+    function userProfileCountryCodeIsValid() {
+      return request.resource.data.countryCode == null || (
+        request.resource.data.countryCode is string &&
+        request.resource.data.countryCode.matches('^[A-Z]{2}$')
+      );
+    }
+
+    function userProfileHemisphereIsValid() {
+      return request.resource.data.hemisphere == null || (
+        request.resource.data.hemisphere in ['north', 'south']
+      );
+    }
+
+
     // ---- Seasons / Matches (global fixtures) ----
     // Readable by all; writable only by Admin SDK (seed script runs client-side
     // in dev, so we keep open for now — full restriction in M5).
@@ -107,11 +160,18 @@ service cloud.firestore {
     }
 
     // ---- Users ----
-    // User profile restrictions are not finalized yet; keep open for app auth flow and test setup.
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if
+        isSignedIn() &&
+        request.auth.uid == userId &&
+        userProfileKeysAreValid() &&
+        userProfileUidIsValid(userId) &&
+        userProfileCreatedAtIsImmutable() &&
+        userProfilePunditIsUnchanged() &&
+        userProfileCountryCodeIsValid() &&
+        userProfileHemisphereIsValid();
     }
-
 
     // ---- predictions ----
     // Universal per-user, per-match predictions.

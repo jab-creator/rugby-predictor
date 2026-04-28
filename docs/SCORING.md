@@ -91,6 +91,8 @@ When a match is finalized:
    - `scoredMatchCount += 1`
    - `lastScoredMatchId = matchId`
    - `pointsByRound[match.round] += prediction.totalPoints`
+   - Copy current denormalized profile fields (`displayName`, `photoURL`, `countryCode`,
+     `hemisphere`, `isPundit`) so leaderboard filters never need joins
 5. **Propagate to leaderboards** (see DATA_MODEL.md for eager/lazy strategy):
    - Global leaderboard (eager)
    - Hemisphere/Pundit leaderboards (eager)

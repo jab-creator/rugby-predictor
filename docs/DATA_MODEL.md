@@ -71,10 +71,12 @@ User profile with attributes for dynamic pool calculation.
   
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  lastSignInAt?: Timestamp;
 }
 ```
 
-**Security:** User can read/write own doc only.
+**Security:** User can read/write own doc only. Client writes may update `countryCode` and
+`hemisphere`, but `isPundit` is server-managed.
 
 ### `tournaments/{tournamentId}`
 Tournament metadata.
@@ -176,6 +178,13 @@ User's prediction for a match. **Universal across all contexts.**
   // locked (either manually or auto-locked at kickoff). Deterministic: only
   // set/updated when a prediction transitions to locked state.
   lastLockedPredictionAt?: Timestamp;
+
+  // Denormalized user attributes for leaderboard filtering
+  displayName: string;
+  photoURL?: string;
+  countryCode?: string;
+  hemisphere?: "north" | "south";
+  isPundit: boolean;
   
   updatedAt: Timestamp;
 }
@@ -193,6 +202,8 @@ total err of 15 (they were closer to the actual margins on their correct picks).
 
 **Usage:**
 - When match finalized → scoring engine computes points per prediction → updates this doc
+- When a user profile changes → Cloud Functions re-sync `displayName`, `photoURL`, `countryCode`,
+  `hemisphere`, and `isPundit` onto existing stats docs
 - Leaderboards read from this doc, NOT from individual predictions
 - `scoredMatchCount` and `lastScoredMatchId` allow detection of partial scoring runs
 - `pointsByRound` enables leaderboard rebuilds without re-querying all predictions

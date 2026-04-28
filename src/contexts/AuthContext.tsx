@@ -8,8 +8,8 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged 
 } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth } from '@/lib/firebase';
+import { syncSignedInUserProfile } from '@/lib/users';
 
 interface AuthContextType {
   user: User | null;
@@ -34,6 +34,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
+
+      if (user) {
+        try {
+          await syncSignedInUserProfile(user);
+        } catch (error) {
+          console.error('Error syncing signed-in user profile:', error);
+        }
+      }
+
       setLoading(false);
     });
 
@@ -43,18 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithGoogle = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      
-      // Create or update user profile in Firestore (for easy access to displayName/photoURL)
-      if (result.user) {
-        const userRef = doc(db, 'users', result.user.uid);
-        await setDoc(userRef, {
-          displayName: result.user.displayName,
-          email: result.user.email,
-          photoURL: result.user.photoURL,
-          lastSignInAt: serverTimestamp(),
-        }, { merge: true });
-      }
+      await signInWithPopup(auth, provider);
     } catch (error) {
       console.error('Sign in error:', error);
       throw error;

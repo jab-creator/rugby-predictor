@@ -228,7 +228,8 @@ export async function deletePool(poolId: string): Promise<void> {
 }
 
 /**
- * Write a user profile document — mirrors what AuthContext.signInWithGoogle does.
+ * Write a user profile document using Admin SDK so tests do not depend on
+ * client security rules for users/{userId}.
  */
 export async function createUserProfile(
   uid: string,
@@ -236,12 +237,32 @@ export async function createUserProfile(
   email: string,
   photoURL: string = '',
 ): Promise<void> {
-  await firestoreSet(`users/${uid}`, {
+  const now = admin.firestore.Timestamp.now();
+  await getAdminDb().doc(`users/${uid}`).set({
+    uid,
     displayName,
     email,
     photoURL,
-    lastSignInAt: new Date().toISOString(),
-  });
+    isPundit: false,
+    createdAt: now,
+    updatedAt: now,
+    lastSignInAt: now,
+  }, { merge: true });
+}
+
+export async function getUserProfileDoc(
+  userId: string,
+): Promise<Record<string, unknown> | null> {
+  const snapshot = await getAdminDb().doc(`users/${userId}`).get();
+  return snapshot.exists ? (snapshot.data() as Record<string, unknown>) : null;
+}
+
+export async function setUserTournamentStatsDoc(
+  tournamentId: string,
+  userId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  await getAdminDb().doc(`user_tournament_stats/${tournamentId}_${userId}`).set(data, { merge: true });
 }
 
 /**

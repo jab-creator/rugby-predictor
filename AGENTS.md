@@ -32,6 +32,18 @@
 - Playwright scoring coverage lives in `e2e/scoring.spec.ts`; it validates both creator-driven finalization and trigger idempotency.
 
 
+## User attributes + denormalized leaderboard filters (M7)
+- Canonical user attributes now live on `users/{userId}`: optional `countryCode`, optional `hemisphere`, and server-managed `isPundit`.
+- Client profile editing lives at `src/app/profile/page.tsx` and writes through `src/lib/users.ts`; users may edit only `countryCode` / `hemisphere`, while auth-owned identity fields (`displayName`, `photoURL`, `email`) continue syncing from sign-in.
+- Admin pundit management lives at `src/app/admin/pundits/page.tsx` and functions `setUserPunditStatus` + `backfillUserTournamentStatsProfiles`.
+- Functions-side denormalization boundary:
+  - `functions/src/scoring-engine.ts` writes `displayName`, `photoURL`, `countryCode`, `hemisphere`, and `isPundit` into `user_tournament_stats` during scoring/rebuilds.
+  - Firestore trigger `onUserProfileWrite` re-syncs those same fields onto existing `user_tournament_stats` docs whenever a user profile changes.
+- Admin authorization for pundit tooling currently accepts Firebase custom claim `admin == true`, `ADMIN_UIDS`, or `ADMIN_EMAILS`; emulator fallback allows `playwright-test@example.com` when no env vars are set.
+- Milestone 7 leaderboard/filter indexes were added on `user_tournament_stats` for `(tournamentId + ranking sort)`, plus filtered variants for `countryCode`, `hemisphere`, and `isPundit`.
+
+
+
 ## E2E testing notes
 - Demo project: `demo-six-nations-predictor`.
 - Emulator stack used in local validation: Auth `9099`, Firestore `8080`, Functions `5001`.

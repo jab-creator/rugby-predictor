@@ -6,8 +6,10 @@ import {
   getLegacyScoringRunDocId,
   getScoringRunDocId,
   scoreFinalizedMatch,
+  syncUserProfileToTournamentStats,
   upsertLastLockedPredictionAt,
   type MatchScoringDoc,
+  type UserProfileDoc,
 } from './scoring-engine';
 
 admin.initializeApp();
@@ -117,6 +119,113 @@ async function commitBatchWrites(writes: BatchWrite[]): Promise<void> {
 
     await batch.commit();
   }
+}
+
+function parseConfiguredValues(raw: string | undefined): Set<string> {
+  return new Set(
+    (raw ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  );
+}
+
+function getConfiguredAdminUids(): Set<string> {
+  return parseConfiguredValues(process.env.ADMIN_UIDS);
+}
+
+function getConfiguredAdminEmails(): Set<string> {
+  const emails = parseConfiguredValues(process.env.ADMIN_EMAILS);
+
+  if (emails.size === 0 && process.env.FUNCTIONS_EMULATOR === 'true') {
+    emails.add('playwright-test@example.com');
+  }
+
+  return new Set(Array.from(emails).map((email) => email.toLowerCase()));
+}
+
+function isAdminCaller(context: functions.https.CallableContext): boolean {
+  const uid = context.auth?.uid;
+  const email = typeof context.auth?.token.email === 'string'
+    ? context.auth.token.email.toLowerCase()
+    : null;
+
+  return context.auth?.token.admin === true ||
+    (uid != null && getConfiguredAdminUids().has(uid)) ||
+    (email != null && getConfiguredAdminEmails().has(email));
+}
+
+function assertAdminCaller(context: functions.https.CallableContext): void {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  if (!isAdminCaller(context)) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin access required');
+  }
+}
+
+function relevantUserProfileFields(profile: UserProfileDoc | null | undefined) {
+  return {
+    displayName: profile?.displayName ?? null,
+    photoURL: profile?.photoURL ?? null,
+    countryCode: profile?.countryCode ?? null,
+    hemisphere: profile?.hemisphere ?? null,
+    isPundit: profile?.isPundit ?? false,
+  };
+}
+
+async function resolveTargetUser(params: { userId?: string; email?: string }) {
+  const trimmedUserId = params.userId?.trim();
+  const trimmedEmail = params.email?.trim().toLowerCase();
+
+  if (!trimmedUserId && !trimmedEmail) {
+    throw new functions.https.HttpsError('invalid-argument', 'Provide a target userId or email');
+  }
+
+  if (trimmedUserId) {
+    const profile = await loadUserProfile(trimmedUserId);
+    if (profile) {
+      return {
+        userId: trimmedUserId,
+        email: typeof profile.email === 'string' ? profile.email : null,
+        displayName: profile.displayName ?? trimmedUserId,
+        photoURL: profile.photoURL ?? null,
+      };
+    }
+
+    const userRecord = await admin.auth().getUser(trimmedUserId);
+    return {
+      userId: userRecord.uid,
+      email: userRecord.email ?? null,
+      displayName: userRecord.displayName ?? userRecord.uid,
+      photoURL: userRecord.photoURL ?? null,
+    };
+  }
+
+  const userSnapshot = await db.collection('users').where('email', '==', trimmedEmail).limit(1).get();
+  if (!userSnapshot.empty) {
+    const profile = userSnapshot.docs[0].data() as UserProfileDoc;
+    return {
+      userId: userSnapshot.docs[0].id,
+      email: typeof profile.email === 'string' ? profile.email : trimmedEmail ?? null,
+      displayName: profile.displayName ?? userSnapshot.docs[0].id,
+      photoURL: profile.photoURL ?? null,
+    };
+  }
+
+  const userRecord = await admin.auth().getUserByEmail(trimmedEmail as string);
+  return {
+    userId: userRecord.uid,
+    email: userRecord.email ?? trimmedEmail ?? null,
+    displayName: userRecord.displayName ?? userRecord.uid,
+    photoURL: userRecord.photoURL ?? null,
+  };
+}
+
+async function loadUserProfile(userId: string): Promise<UserProfileDoc | null> {
+  const snapshot = await db.collection('users').doc(userId).get();
+  return snapshot.exists ? (snapshot.data() as UserProfileDoc) : null;
 }
 
 /**
@@ -415,6 +524,145 @@ export const lockPick = functions.https.onCall(async (data, context) => {
   });
 
   return { lockedAt: lockedAt.toDate().toISOString() };
+});
+
+
+// ---------- onUserProfileWrite: sync denormalized tournament stats ----------
+
+export const onUserProfileWrite = functions.firestore
+  .document('users/{userId}')
+  .onWrite(async (change, context) => {
+    if (!change.after.exists) {
+      return;
+    }
+
+    const before = change.before.exists ? (change.before.data() as UserProfileDoc) : null;
+    const after = change.after.data() as UserProfileDoc;
+
+    if (
+      JSON.stringify(relevantUserProfileFields(before)) ===
+      JSON.stringify(relevantUserProfileFields(after))
+    ) {
+      return;
+    }
+
+    await syncUserProfileToTournamentStats({
+      db,
+      userId: context.params.userId,
+      profile: after,
+      now: after.updatedAt ?? Timestamp.now(),
+    });
+  });
+
+// ---------- setUserPunditStatus: minimal admin-only pundit flag path ----------
+
+export const setUserPunditStatus = functions.https.onCall(async (data, context) => {
+  assertAdminCaller(context);
+
+  const { userId, email, isPundit } = data as {
+    userId?: string;
+    email?: string;
+    isPundit?: boolean;
+  };
+
+  if (typeof isPundit !== 'boolean') {
+    throw new functions.https.HttpsError('invalid-argument', 'isPundit must be a boolean');
+  }
+
+  const target = await resolveTargetUser({ userId, email });
+  const existingProfile = await loadUserProfile(target.userId);
+  const now = Timestamp.now();
+
+  const nextProfile: UserProfileDoc = {
+    uid: target.userId,
+    ...(target.email ? { email: target.email } : existingProfile?.email ? { email: existingProfile.email } : {}),
+    displayName: existingProfile?.displayName ?? target.displayName,
+    ...(existingProfile?.photoURL != null
+      ? { photoURL: existingProfile.photoURL }
+      : target.photoURL != null
+        ? { photoURL: target.photoURL }
+        : {}),
+    ...(existingProfile?.countryCode != null ? { countryCode: existingProfile.countryCode } : {}),
+    ...(existingProfile?.hemisphere != null ? { hemisphere: existingProfile.hemisphere } : {}),
+    isPundit,
+    createdAt: existingProfile?.createdAt ?? now,
+    updatedAt: now,
+    ...(existingProfile?.lastSignInAt != null ? { lastSignInAt: existingProfile.lastSignInAt } : {}),
+  };
+
+  await db.collection('users').doc(target.userId).set(nextProfile, { merge: true });
+  const syncedStats = await syncUserProfileToTournamentStats({
+    db,
+    userId: target.userId,
+    profile: nextProfile,
+    now,
+  });
+
+  return {
+    userId: target.userId,
+    email: target.email,
+    displayName: nextProfile.displayName ?? target.displayName,
+    isPundit,
+    syncedStats,
+  };
+});
+
+// ---------- backfillUserTournamentStatsProfiles: admin profile denormalization backfill ----------
+
+export const backfillUserTournamentStatsProfiles = functions.https.onCall(async (data, context) => {
+  assertAdminCaller(context);
+
+  const { userId, email } = (data ?? {}) as {
+    userId?: string;
+    email?: string;
+  };
+  const now = Timestamp.now();
+
+  if (userId || email) {
+    const target = await resolveTargetUser({ userId, email });
+    const profile = await loadUserProfile(target.userId);
+
+    if (!profile) {
+      return { syncedUsers: 0, syncedStats: 0 };
+    }
+
+    return {
+      syncedUsers: 1,
+      syncedStats: await syncUserProfileToTournamentStats({
+        db,
+        userId: target.userId,
+        profile,
+        now,
+      }),
+    };
+  }
+
+  const statsSnapshot = await db.collection('user_tournament_stats').get();
+  const userIds = [...new Set(
+    statsSnapshot.docs
+      .map((doc) => (doc.data() as { userId?: string }).userId)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0),
+  )];
+
+  let syncedUsers = 0;
+  let syncedStats = 0;
+
+  for (const targetUserId of userIds) {
+    const profile = await loadUserProfile(targetUserId);
+    if (!profile) {
+      continue;
+    }
+
+    syncedUsers += 1;
+    syncedStats += await syncUserProfileToTournamentStats({
+      db,
+      userId: targetUserId,
+      profile,
+      now,
+    });
+  }
+
+  return { syncedUsers, syncedStats };
 });
 
 // ---------- finalizeMatch: callable admin/dev result entry ----------
