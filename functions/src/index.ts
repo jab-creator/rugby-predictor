@@ -11,6 +11,7 @@ import {
   type MatchScoringDoc,
   type UserProfileDoc,
 } from './scoring-engine';
+import { coerceTimestamp, resolvePoolSeasonId } from './firestore-coercion';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -89,7 +90,7 @@ function buildPredictionFromLegacy(params: {
     tournamentId,
     winner: legacyDetail.pickedWinnerTeamId,
     margin: legacyDetail.pickedMargin,
-    kickoffAt: legacyStatus.kickoffAt ?? kickoffAt,
+    kickoffAt: coerceTimestamp(legacyStatus.kickoffAt) ?? kickoffAt,
     isComplete: legacyStatus.isComplete,
     isLocked: lockedAt !== null,
     lockedAt,
@@ -389,7 +390,11 @@ export const lockPick = functions.https.onCall(async (data, context) => {
   if (!poolSnap.exists) {
     throw new functions.https.HttpsError('not-found', 'Pool not found');
   }
-  const { seasonId } = poolSnap.data() as { seasonId: string };
+
+  const seasonId = resolvePoolSeasonId(poolSnap.data() as { seasonId?: unknown; tournamentId?: unknown });
+  if (!seasonId) {
+    throw new functions.https.HttpsError('failed-precondition', 'Pool is missing season configuration');
+  }
 
   const matchRef = db.collection('seasons').doc(seasonId).collection('matches').doc(matchId);
   const matchSnap = await matchRef.get();
@@ -398,7 +403,10 @@ export const lockPick = functions.https.onCall(async (data, context) => {
   }
 
   const now = Timestamp.now();
-  const kickoffAt = matchSnap.data()!.kickoffAt as admin.firestore.Timestamp;
+  const kickoffAt = coerceTimestamp(matchSnap.data()?.kickoffAt);
+  if (!kickoffAt) {
+    throw new functions.https.HttpsError('failed-precondition', 'Match kickoff time is invalid');
+  }
 
   if (kickoffAt.toMillis() <= now.toMillis()) {
     throw new functions.https.HttpsError(
@@ -792,7 +800,12 @@ export const onMatchWrite = functions.firestore
       return;
     }
 
-    const kickoffAt = data.kickoffAt as admin.firestore.Timestamp;
+    const kickoffAt = coerceTimestamp(data.kickoffAt);
+    if (!kickoffAt) {
+      functions.logger.warn(`Skipping auto-lock scheduling for match ${matchId}: invalid kickoffAt`);
+      return;
+    }
+
     if (kickoffAt.toMillis() <= now.toMillis()) return;
 
     if (process.env.FUNCTIONS_EMULATOR) {
@@ -866,7 +879,12 @@ export const autoLockMatch = functions.https.onRequest(async (req, res) => {
   }
 
   const now = Timestamp.now();
-  const kickoffAt = matchSnap.data()!.kickoffAt as admin.firestore.Timestamp;
+  const kickoffAt = coerceTimestamp(matchSnap.data()?.kickoffAt);
+  if (!kickoffAt) {
+    res.status(400).json({ error: 'Match kickoff time is invalid' });
+    return;
+  }
+
   const { locked } = await lockPicksForMatch(seasonId, matchId, kickoffAt, now);
 
   functions.logger.info(`autoLockMatch: locked ${locked} predictions for match ${matchId}`);

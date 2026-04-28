@@ -12,6 +12,8 @@
 - Functions lock flow is the server compatibility boundary:
   - `lockPick` locks the universal prediction and mirrors `lockedAt` to legacy `picks_status`
   - `autoLockMatch` / `lockPicksForMatch` lock universal predictions and mirror `lockedAt` to legacy status docs via `collectionGroup('picks_status')`
+- Locking now defensively normalizes pool/match data in functions: `functions/src/firestore-coercion.ts` accepts Firestore `Timestamp`, ISO strings, `Date`, and `{seconds,nanoseconds}` objects for `kickoffAt`, and `lockPick` falls back to legacy pool `tournamentId` if `seasonId` is absent. This prevents generic `internal` callable failures on legacy/mis-typed Firestore data.
+
 
 ## Firestore rules / indexes
 - `firestore.rules` allows signed-in reads of missing prediction docs (`resource == null`) so client `getDoc()` checks can safely probe for absent predictions before first save.
