@@ -15,7 +15,7 @@ The app evolved from a Six Nations-only predictor into a general rugby predictio
 - **Tournament**: e.g., Six Nations 2026, Rugby Championship 2026, Nations Championship 2026
 - **Matches**: fixtures with kickoff times, teams, final results
 - **User Tournament Stats**: single source of truth for user's score in a tournament
-- **Dynamic Pools**: leaderboards calculated from user attributes (country, hemisphere, isPundit)
+- **Dynamic Pools**: leaderboards calculated from canonical user attributes plus tournament-specific grouping rules (country, resolved hemisphere, isPundit)
 - **Manual Pools**: stored memberships for friends, pundits, private groups, knockout qualification
 - **Prediction**: per user per match: pick winner + margin (1–99)
 - **Status**: whether a user has made a pick and whether it is locked
@@ -41,7 +41,7 @@ The app evolved from a Six Nations-only predictor into a general rugby predictio
 These pools are calculated from user attributes:
 - **Global**: all users
 - **Country**: e.g., users where `countryCode == "CA"`
-- **Hemisphere**: users where `hemisphere == "north"` or `"south"`
+- **Hemisphere**: users where tournament-resolved `resolvedHemisphere == "north"` or `"south"`
 - **Pundits**: users where `isPundit == true`
 - **Fans vs Pundits**: comparison view
 

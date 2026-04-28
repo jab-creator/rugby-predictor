@@ -2,22 +2,15 @@
 
 import Header from '@/components/Header';
 import { useAuth } from '@/contexts/AuthContext';
-import { Hemisphere } from '@/lib/types';
 import { getUserProfile, isValidCountryCode, normalizeCountryCode, saveUserProfileAttributes } from '@/lib/users';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-
-const HEMISPHERE_OPTIONS: Array<{ value: Hemisphere; label: string }> = [
-  { value: 'north', label: 'Northern Hemisphere' },
-  { value: 'south', label: 'Southern Hemisphere' },
-];
 
 export default function ProfilePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [countryCode, setCountryCode] = useState('');
-  const [hemisphere, setHemisphere] = useState<'' | Hemisphere>('');
   const [isPundit, setIsPundit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -46,7 +39,6 @@ export default function ProfilePage() {
       setLoadingProfile(true);
       const profile = await getUserProfile(userId);
       setCountryCode(profile?.countryCode ?? '');
-      setHemisphere(profile?.hemisphere ?? '');
       setIsPundit(profile?.isPundit ?? false);
     } catch (loadError) {
       console.error('Error loading profile:', loadError);
@@ -76,11 +68,10 @@ export default function ProfilePage() {
 
       await saveUserProfileAttributes(user.uid, {
         countryCode: normalizedCountryCode === '' ? null : normalizedCountryCode,
-        hemisphere: hemisphere === '' ? null : hemisphere,
       });
 
       setCountryCode(normalizedCountryCode);
-      setSuccess('Profile saved. New leaderboard filters will use these attributes.');
+      setSuccess('Profile saved. Tournament leaderboards will resolve region groupings from your country code and tournament rules.');
     } catch (saveError) {
       console.error('Error saving profile:', saveError);
       setError(saveError instanceof Error ? saveError.message : 'Could not save profile.');
@@ -110,7 +101,7 @@ export default function ProfilePage() {
         <div>
           <h1 className="text-3xl font-bold">Profile</h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            These attributes power tournament-wide leaderboard filters. You can update them any time.
+            Your country powers tournament-wide leaderboard filters. Hemisphere grouping is resolved per tournament so competitions can classify invite teams differently.
           </p>
         </div>
 
@@ -145,30 +136,14 @@ export default function ProfilePage() {
               className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 outline-none focus:border-blue-500"
             />
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-              Optional. Use a two-letter code like CA, GB, or NZ.
+              Optional. Use a two-letter code like CA, GB, JP, or NZ.
+            </p>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Hemisphere leaderboard placement is derived from this country code plus tournament-specific overrides.
             </p>
             {countryCodeError && (
               <p className="mt-2 text-sm text-red-600 dark:text-red-400">{countryCodeError}</p>
             )}
-          </div>
-
-          <div>
-            <label htmlFor="hemisphere" className="block text-sm font-medium mb-2">
-              Hemisphere
-            </label>
-            <select
-              id="hemisphere"
-              value={hemisphere}
-              onChange={(event) => setHemisphere(event.target.value as '' | Hemisphere)}
-              className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-transparent px-3 py-2 outline-none focus:border-blue-500"
-            >
-              <option value="">Prefer not to say</option>
-              {HEMISPHERE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
           </div>
 
           {error && (
@@ -185,7 +160,7 @@ export default function ProfilePage() {
 
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Leaving a field blank simply removes that filter value.
+              Leaving the field blank removes the stored country for future leaderboard grouping.
             </p>
             <button
               type="submit"

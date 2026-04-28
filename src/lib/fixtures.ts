@@ -1,5 +1,5 @@
 import { Timestamp } from 'firebase/firestore';
-import { TeamId, MatchStatus } from './types';
+import { LeaderboardConfig, TeamId, MatchStatus, Hemisphere } from './types';
 
 export interface FixtureData {
   round: number;
@@ -16,6 +16,8 @@ export interface SeasonData {
   name: string;
   startsAt: Date;
   endsAt: Date;
+  leaderboardConfig?: LeaderboardConfig;
+  countryHemisphereOverrides?: Record<string, Hemisphere>;
 }
 
 /**
@@ -27,6 +29,15 @@ export const NATIONS_CHAMPIONSHIP_2026: SeasonData = {
   name: 'Nations Championship 2026',
   startsAt: new Date('2026-07-04T00:00:00Z'),
   endsAt: new Date('2026-11-29T23:59:59Z'),
+  leaderboardConfig: {
+    enableOverall: true,
+    enableCountry: true,
+    enableHemisphere: true,
+    enablePundit: true,
+  },
+  countryHemisphereOverrides: {
+    JP: 'south',
+  },
 };
 
 /**

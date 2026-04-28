@@ -391,6 +391,15 @@ export async function seedTestSeason(seasonId: string = 'nations-championship-te
     name: 'Nations Championship Test (Future)',
     startsAt: new Date('2099-07-01T00:00:00Z'),
     endsAt: new Date('2099-11-30T23:59:59Z'),
+    leaderboardConfig: {
+      enableOverall: true,
+      enableCountry: true,
+      enableHemisphere: true,
+      enablePundit: true,
+    },
+    countryHemisphereOverrides: {
+      JP: 'south',
+    },
   });
 
   const fixtures = [

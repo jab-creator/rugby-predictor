@@ -91,7 +91,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "hemisphere",
+          "fieldPath": "resolvedHemisphere",
           "order": "ASCENDING"
         },
         {

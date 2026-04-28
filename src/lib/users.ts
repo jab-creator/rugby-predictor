@@ -8,13 +8,12 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
-import { Hemisphere, UserProfile } from './types';
+import { UserProfile } from './types';
 
 const COUNTRY_CODE_REGEX = /^[A-Z]{2}$/;
 
 export interface SaveUserProfileInput {
   countryCode?: string | null;
-  hemisphere?: Hemisphere | null;
 }
 
 interface SetUserPunditStatusData {
@@ -92,7 +91,6 @@ export async function saveUserProfileAttributes(
     {
       updatedAt: serverTimestamp(),
       countryCode: normalizedCountryCode === '' ? deleteField() : normalizedCountryCode,
-      hemisphere: input.hemisphere ?? deleteField(),
     },
     { merge: true },
   );

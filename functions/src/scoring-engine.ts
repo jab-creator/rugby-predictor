@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import { AggregateStatsState, applyScoreToAggregateStats, scorePrediction } from './scoring';
+import { resolveTournamentUserAttributes, type TournamentDoc } from './tournament-user-attributes';
 
 export interface MatchScoringDoc {
   round: number;
@@ -54,7 +55,7 @@ interface UserTournamentStatsDoc {
   displayName: string;
   photoURL?: string;
   countryCode?: string;
-  hemisphere?: 'north' | 'south';
+  resolvedHemisphere?: 'north' | 'south';
   isPundit: boolean;
   updatedAt: admin.firestore.Timestamp;
 }
@@ -122,51 +123,37 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
-function normalizeCountryCode(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const normalized = value.trim().toUpperCase();
-  return /^[A-Z]{2}$/.test(normalized) ? normalized : undefined;
-}
-
-function normalizeHemisphere(value: unknown): 'north' | 'south' | undefined {
-  return value === 'north' || value === 'south' ? value : undefined;
-}
-
 function resolveStatsIdentityFields(params: {
   userId: string;
+  tournament?: TournamentDoc | null;
   existing?: Partial<UserTournamentStatsDoc> | null;
   profile?: UserProfileDoc | null;
-}): Pick<UserTournamentStatsDoc, 'displayName' | 'photoURL' | 'countryCode' | 'hemisphere' | 'isPundit'> {
-  const { userId, existing, profile } = params;
+}): Pick<UserTournamentStatsDoc, 'displayName' | 'photoURL' | 'countryCode' | 'resolvedHemisphere' | 'isPundit'> {
+  const { userId, tournament, existing, profile } = params;
   const hasProfile = profile != null;
   const displayName = nonEmptyString(profile?.displayName) ?? existing?.displayName ?? userId;
   const photoURL = hasProfile
     ? nonEmptyString(profile?.photoURL)
     : nonEmptyString(existing?.photoURL);
-  const countryCode = hasProfile
-    ? normalizeCountryCode(profile?.countryCode)
-    : normalizeCountryCode(existing?.countryCode);
-  const hemisphere = hasProfile
-    ? normalizeHemisphere(profile?.hemisphere)
-    : normalizeHemisphere(existing?.hemisphere);
-  const isPundit = hasProfile
-    ? profile?.isPundit === true
-    : existing?.isPundit ?? false;
+  const resolvedAttributes = resolveTournamentUserAttributes(tournament, {
+    countryCode: profile?.countryCode ?? existing?.countryCode,
+    isPundit: profile?.isPundit ?? existing?.isPundit,
+  });
 
   return {
     displayName,
     ...(photoURL ? { photoURL } : {}),
-    ...(countryCode ? { countryCode } : {}),
-    ...(hemisphere ? { hemisphere } : {}),
-    isPundit,
+    ...(resolvedAttributes.countryCode ? { countryCode: resolvedAttributes.countryCode } : {}),
+    ...(resolvedAttributes.resolvedHemisphere
+      ? { resolvedHemisphere: resolvedAttributes.resolvedHemisphere }
+      : {}),
+    isPundit: resolvedAttributes.isPundit,
   };
 }
 
 function buildUserTournamentStatsProfilePatch(params: {
   userId: string;
+  tournament?: TournamentDoc | null;
   existing?: Partial<UserTournamentStatsDoc> | null;
   profile?: UserProfileDoc | null;
   now: admin.firestore.Timestamp;
@@ -178,7 +165,8 @@ function buildUserTournamentStatsProfilePatch(params: {
     displayName: resolved.displayName,
     photoURL: resolved.photoURL ?? admin.firestore.FieldValue.delete(),
     countryCode: resolved.countryCode ?? admin.firestore.FieldValue.delete(),
-    hemisphere: resolved.hemisphere ?? admin.firestore.FieldValue.delete(),
+    resolvedHemisphere: resolved.resolvedHemisphere ?? admin.firestore.FieldValue.delete(),
+    hemisphere: admin.firestore.FieldValue.delete(),
     isPundit: resolved.isPundit,
     updatedAt: now,
   };
@@ -186,17 +174,18 @@ function buildUserTournamentStatsProfilePatch(params: {
 
 function buildUserTournamentStatsDoc(params: {
   tournamentId: string;
+  tournament?: TournamentDoc | null;
   userId: string;
   aggregate: AggregateStatsState;
   existing?: Partial<UserTournamentStatsDoc> | null;
   profile?: UserProfileDoc | null;
   now: admin.firestore.Timestamp;
 }): UserTournamentStatsDoc {
-  const { tournamentId, userId, aggregate, existing, profile, now } = params;
+  const { tournamentId, tournament, userId, aggregate, existing, profile, now } = params;
 
   const nextLockedAtMillis = aggregate.lastLockedPredictionAtMillis;
   const existingLockedAtMillis = timestampToMillis(existing?.lastLockedPredictionAt);
-  const identity = resolveStatsIdentityFields({ userId, existing, profile });
+  const identity = resolveStatsIdentityFields({ userId, tournament, existing, profile });
 
   return {
     id: getUserTournamentStatsDocId(tournamentId, userId),
@@ -235,12 +224,35 @@ export async function syncUserProfileToTournamentStats(params: {
     return 0;
   }
 
+  const tournamentIds = [...new Set(
+    statsSnapshot.docs
+      .map((statsDoc) => statsDoc.data().tournamentId)
+      .filter((tournamentId): tournamentId is string => typeof tournamentId === 'string' && tournamentId !== ''),
+  )];
+  const tournamentEntries = await Promise.all(
+    tournamentIds.map(async (tournamentId) => {
+      const tournamentSnap = await db.collection('seasons').doc(tournamentId).get();
+      return [
+        tournamentId,
+        tournamentSnap.exists ? (tournamentSnap.data() as TournamentDoc) : null,
+      ] as const;
+    }),
+  );
+  const tournamentsById = new Map(tournamentEntries);
+
   const batch = db.batch();
   statsSnapshot.docs.forEach((statsDoc) => {
     const existing = statsDoc.data() as Partial<UserTournamentStatsDoc>;
+    const tournamentId = typeof existing.tournamentId === 'string' ? existing.tournamentId : undefined;
     batch.set(
       statsDoc.ref,
-      buildUserTournamentStatsProfilePatch({ userId, existing, profile: profile ?? null, now }),
+      buildUserTournamentStatsProfilePatch({
+        userId,
+        tournament: tournamentId ? tournamentsById.get(tournamentId) ?? null : null,
+        existing,
+        profile: profile ?? null,
+        now,
+      }),
       { merge: true },
     );
   });
@@ -280,9 +292,10 @@ export async function upsertLastLockedPredictionAt(params: {
   const statsRef = db.collection('user_tournament_stats').doc(getUserTournamentStatsDocId(tournamentId, userId));
 
   await db.runTransaction(async (tx) => {
-    const [statsSnap, userSnap] = await Promise.all([
+    const [statsSnap, userSnap, tournamentSnap] = await Promise.all([
       tx.get(statsRef),
       tx.get(db.collection('users').doc(userId)),
+      tx.get(db.collection('seasons').doc(tournamentId)),
     ]);
 
     const existing = statsSnap.exists ? (statsSnap.data() as Partial<UserTournamentStatsDoc>) : null;
@@ -293,11 +306,13 @@ export async function upsertLastLockedPredictionAt(params: {
     }
 
     const profile = userSnap.exists ? (userSnap.data() as UserProfileDoc) : null;
+    const tournament = tournamentSnap.exists ? (tournamentSnap.data() as TournamentDoc) : null;
 
     tx.set(
       statsRef,
       buildUserTournamentStatsDoc({
         tournamentId,
+        tournament,
         userId,
         aggregate: {
           totalPoints: typeof existing?.totalPoints === 'number' ? existing.totalPoints : 0,
@@ -342,14 +357,16 @@ export async function scoreFinalizedMatch(params: {
   const actualOutcome = deriveMatchOutcome(match);
 
   return db.runTransaction(async (tx) => {
-    const [scoringRunSnap, legacyScoringRunSnap] = await Promise.all([
+    const [scoringRunSnap, legacyScoringRunSnap, tournamentSnap] = await Promise.all([
       tx.get(scoringRunRef),
       tx.get(legacyScoringRunRef),
+      tx.get(db.collection('seasons').doc(seasonId)),
     ]);
     if (scoringRunSnap.exists || legacyScoringRunSnap.exists) {
       return { scored: false, skipped: true, reason: 'already-scored' };
     }
 
+    const tournament = tournamentSnap.exists ? (tournamentSnap.data() as TournamentDoc) : null;
     const predictionSnap = await tx.get(predictionQuery);
     const scoredPredictions = predictionSnap.docs
       .map((docSnap) => {
@@ -421,6 +438,7 @@ export async function scoreFinalizedMatch(params: {
 
       const nextStats = buildUserTournamentStatsDoc({
         tournamentId: seasonId,
+        tournament,
         userId: prediction.userId,
         aggregate,
         existing: entry?.existing ?? null,

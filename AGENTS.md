@@ -33,14 +33,16 @@
 
 
 ## User attributes + denormalized leaderboard filters (M7)
-- Canonical user attributes now live on `users/{userId}`: optional `countryCode`, optional `hemisphere`, and server-managed `isPundit`.
-- Client profile editing lives at `src/app/profile/page.tsx` and writes through `src/lib/users.ts`; users may edit only `countryCode` / `hemisphere`, while auth-owned identity fields (`displayName`, `photoURL`, `email`) continue syncing from sign-in.
+- Canonical user attributes now live on `users/{userId}`: optional `countryCode`, legacy/back-compat `hemisphere`, and server-managed `isPundit`.
+- Client profile editing lives at `src/app/profile/page.tsx` and writes through `src/lib/users.ts`; users now edit only `countryCode`, while auth-owned identity fields (`displayName`, `photoURL`, `email`) continue syncing from sign-in.
+- Tournament grouping config now lives on `seasons/{tournamentId}` via `leaderboardConfig` flags plus optional `countryHemisphereOverrides` (for example Nations Championship uses `JP -> south`).
 - Admin pundit management lives at `src/app/admin/pundits/page.tsx` and functions `setUserPunditStatus` + `backfillUserTournamentStatsProfiles`.
 - Functions-side denormalization boundary:
-  - `functions/src/scoring-engine.ts` writes `displayName`, `photoURL`, `countryCode`, `hemisphere`, and `isPundit` into `user_tournament_stats` during scoring/rebuilds.
-  - Firestore trigger `onUserProfileWrite` re-syncs those same fields onto existing `user_tournament_stats` docs whenever a user profile changes.
+  - `functions/src/tournament-user-attributes.ts` resolves tournament-specific leaderboard fields from tournament config + canonical user profile.
+  - `functions/src/scoring-engine.ts` writes `displayName`, `photoURL`, `countryCode`, tournament-specific `resolvedHemisphere`, and `isPundit` into `user_tournament_stats` during scoring/rebuilds, and deletes legacy stats `hemisphere` during profile sync patches.
+  - Firestore trigger `onUserProfileWrite` re-syncs those same tournament-specific fields onto existing `user_tournament_stats` docs whenever a user profile changes.
 - Admin authorization for pundit tooling currently accepts Firebase custom claim `admin == true`, `ADMIN_UIDS`, or `ADMIN_EMAILS`; emulator fallback allows `playwright-test@example.com` when no env vars are set.
-- Milestone 7 leaderboard/filter indexes were added on `user_tournament_stats` for `(tournamentId + ranking sort)`, plus filtered variants for `countryCode`, `hemisphere`, and `isPundit`.
+- Milestone 7 leaderboard/filter indexes on `user_tournament_stats` now cover `(tournamentId + ranking sort)`, plus filtered variants for `countryCode`, `resolvedHemisphere`, and `isPundit`.
 
 
 

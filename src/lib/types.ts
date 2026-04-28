@@ -10,6 +10,13 @@ export type MatchStatus = 'scheduled' | 'live' | 'final';
 
 export type Hemisphere = 'north' | 'south';
 
+export interface LeaderboardConfig {
+  enableOverall?: boolean;
+  enableCountry?: boolean;
+  enableHemisphere?: boolean;
+  enablePundit?: boolean;
+}
+
 // Scoring version
 export type ScoringVersion = 'v1';
 
@@ -19,6 +26,8 @@ export interface Season {
   name: string;
   startsAt: Timestamp;
   endsAt: Timestamp;
+  leaderboardConfig?: LeaderboardConfig;
+  countryHemisphereOverrides?: Record<string, Hemisphere>;
 }
 
 export interface Match {
@@ -107,7 +116,7 @@ export interface UserProfile {
   displayName: string;
   photoURL?: string;
   countryCode?: string;
-  hemisphere?: Hemisphere;
+  hemisphere?: Hemisphere; // legacy/back-compat only; tournament leaderboards resolve hemisphere per tournament
   isPundit: boolean;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -141,7 +150,7 @@ export interface UserTournamentStats {
   displayName: string;
   photoURL?: string;
   countryCode?: string;
-  hemisphere?: Hemisphere;
+  resolvedHemisphere?: Hemisphere;
   isPundit: boolean;
 
   updatedAt: Timestamp;

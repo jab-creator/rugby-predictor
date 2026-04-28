@@ -24,6 +24,10 @@ async function seedSeason(seasonData: SeasonData): Promise<void> {
     name: seasonData.name,
     startsAt: Timestamp.fromDate(seasonData.startsAt),
     endsAt: Timestamp.fromDate(seasonData.endsAt),
+    ...(seasonData.leaderboardConfig ? { leaderboardConfig: seasonData.leaderboardConfig } : {}),
+    ...(seasonData.countryHemisphereOverrides
+      ? { countryHemisphereOverrides: seasonData.countryHemisphereOverrides }
+      : {}),
   };
   
   await setDoc(seasonRef, season);

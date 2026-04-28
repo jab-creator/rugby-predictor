@@ -55,7 +55,7 @@ avoids needing a subcollection under tournaments while keeping IDs globally uniq
 ## Global Collections
 
 ### `users/{userId}`
-User profile with attributes for dynamic pool calculation.
+Canonical user profile attributes used as inputs to tournament-specific leaderboard grouping.
 
 ```typescript
 {
@@ -64,9 +64,9 @@ User profile with attributes for dynamic pool calculation.
   displayName: string;
   photoURL?: string;
   
-  // Dynamic pool attributes
+  // Canonical profile attributes
   countryCode?: string;      // ISO 3166-1 alpha-2 (e.g., "CA", "GB", "NZ")
-  hemisphere?: "north" | "south";
+  hemisphere?: "north" | "south";  // legacy/back-compat only; do not use for new leaderboard logic
   isPundit: boolean;         // default false
   
   createdAt: Timestamp;
@@ -75,11 +75,10 @@ User profile with attributes for dynamic pool calculation.
 }
 ```
 
-**Security:** User can read/write own doc only. Client writes may update `countryCode` and
-`hemisphere`, but `isPundit` is server-managed.
+**Security:** User can read/write own doc only. Client writes may update `countryCode`. `isPundit` is server-managed. The legacy `hemisphere` field may remain on old docs for compatibility, but new leaderboard logic must not depend on it.
 
 ### `tournaments/{tournamentId}`
-Tournament metadata.
+Tournament metadata. In the current codebase this lives in `seasons/{tournamentId}`.
 
 ```typescript
 {
@@ -88,11 +87,23 @@ Tournament metadata.
   startsAt: Timestamp;
   endsAt: Timestamp;
   status: "scheduled" | "active" | "completed";
+  leaderboardConfig?: {
+    enableOverall: boolean;
+    enableCountry: boolean;
+    enableHemisphere: boolean;
+    enablePundit: boolean;
+  };
+  countryHemisphereOverrides?: {
+    [countryCode: string]: "north" | "south";   // e.g. { JP: "south" } for Nations Championship
+  };
   createdAt: Timestamp;
 }
 ```
 
 **Security:** Read: all authenticated. Write: admin only.
+
+**Hemisphere resolution:** `countryCode` is canonical on the user profile, but hemisphere grouping is tournament-specific. `countryHemisphereOverrides` lets one competition classify a country differently from the global default without changing the user's permanent profile.
+
 
 ### `tournaments/{tournamentId}/matches/{matchId}`
 Match fixture.
@@ -179,11 +190,11 @@ User's prediction for a match. **Universal across all contexts.**
   // set/updated when a prediction transitions to locked state.
   lastLockedPredictionAt?: Timestamp;
 
-  // Denormalized user attributes for leaderboard filtering
+  // Denormalized leaderboard attributes for this tournament only
   displayName: string;
   photoURL?: string;
   countryCode?: string;
-  hemisphere?: "north" | "south";
+  resolvedHemisphere?: "north" | "south";
   isPundit: boolean;
   
   updatedAt: Timestamp;
@@ -203,7 +214,7 @@ total err of 15 (they were closer to the actual margins on their correct picks).
 **Usage:**
 - When match finalized → scoring engine computes points per prediction → updates this doc
 - When a user profile changes → Cloud Functions re-sync `displayName`, `photoURL`, `countryCode`,
-  `hemisphere`, and `isPundit` onto existing stats docs
+  tournament-specific `resolvedHemisphere`, and `isPundit` onto existing stats docs
 - Leaderboards read from this doc, NOT from individual predictions
 - `scoredMatchCount` and `lastScoredMatchId` allow detection of partial scoring runs
 - `pointsByRound` enables leaderboard rebuilds without re-querying all predictions
@@ -226,7 +237,7 @@ Leaderboard metadata and **summary statistics for cross-group comparison**.
   name: string;              // "Global", "Canada", "Northern Hemisphere", "Pundits"
   
   // Filter criteria (for dynamic leaderboards)
-  filterKey?: string;        // "countryCode", "hemisphere", "isPundit"
+  filterKey?: string;        // "countryCode", "resolvedHemisphere", "isPundit"
   filterValue?: string;      // "CA", "north", "true"
   
   totalUsers: number;        // denormalized count
@@ -543,7 +554,7 @@ the leaderboard entries section above.
 ### ✅ DO
 - Store ONE score per user per tournament in `user_tournament_stats`
 - Precompute leaderboards after each match finalized
-- Use user attributes (`countryCode`, `hemisphere`, `isPundit`) to filter dynamic leaderboards
+- Use canonical + tournament-resolved attributes (`countryCode`, `resolvedHemisphere`, `isPundit`) to filter dynamic leaderboards
 - Copy score from `user_tournament_stats` to leaderboard entries (same score, different rank)
 - Use tournament-scoped leaderboard IDs (`{tournamentId}__{type}`)
 - Handle ties: equal metrics → same rank, next rank skips
@@ -583,10 +594,10 @@ pools/{poolId}/entries: (rank ASC)
 ```
 
 **Note on dynamic leaderboards:** Since Firestore doesn't support cross-collection queries, we have two options:
-1. **Denormalize** `countryCode`, `hemisphere`, `isPundit` into `user_tournament_stats` (recommended)
+1. **Denormalize** `countryCode`, `resolvedHemisphere`, `isPundit` into `user_tournament_stats` (recommended)
 2. **Precompute** leaderboard entries for all dynamic pools after each scoring update
 
-**Recommendation:** Denormalize user attributes into `user_tournament_stats` for efficient querying.
+**Recommendation:** Denormalize canonical user attributes plus tournament-resolved grouping fields into `user_tournament_stats` for efficient querying.
 
 ---
 
@@ -612,11 +623,11 @@ pools/{poolId}/entries: (rank ASC)
   // Tiebreaker
   lastLockedPredictionAt?: Timestamp;
   
-  // Denormalized from users/{userId} for dynamic leaderboard filtering
+  // Denormalized from canonical user profile + tournament config for leaderboard filtering
   displayName: string;
   photoURL?: string;
   countryCode?: string;
-  hemisphere?: "north" | "south";
+  resolvedHemisphere?: "north" | "south";
   isPundit: boolean;
   
   updatedAt: Timestamp;
@@ -638,6 +649,13 @@ db.collection('user_tournament_stats')
   .orderBy('totalPoints', 'desc')
   .limit(100)
 
+// Southern hemisphere leaderboard for a tournament
+db.collection('user_tournament_stats')
+  .where('tournamentId', '==', 'six-nations-2026')
+  .where('resolvedHemisphere', '==', 'south')
+  .orderBy('totalPoints', 'desc')
+  .limit(100)
+
 // Pundits leaderboard
 db.collection('user_tournament_stats')
   .where('tournamentId', '==', 'six-nations-2026')
@@ -653,7 +671,7 @@ db.collection('user_tournament_stats')
 - **ONE score per user per tournament** in `user_tournament_stats`
 - **No pool-specific points** — keep one universal score, never create alternate point systems
 - **Predictions are universal** across all contexts
-- **Dynamic pools** (global, country, hemisphere, pundits) calculated from user attributes
+- **Dynamic pools** (global, country, hemisphere, pundits) calculated from canonical user attributes plus tournament-specific grouping rules
 - **Manual pools** (friends, pundits, knockout) store membership but use same scoring
 - **Leaderboards are precomputed** with ranks, not calculated on the fly
 - **Leaderboard IDs are tournament-scoped** (`{tournamentId}__{type}`)

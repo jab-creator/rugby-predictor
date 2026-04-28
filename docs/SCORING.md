@@ -91,8 +91,10 @@ When a match is finalized:
    - `scoredMatchCount += 1`
    - `lastScoredMatchId = matchId`
    - `pointsByRound[match.round] += prediction.totalPoints`
-   - Copy current denormalized profile fields (`displayName`, `photoURL`, `countryCode`,
-     `hemisphere`, `isPundit`) so leaderboard filters never need joins
+   - Copy current denormalized leaderboard fields (`displayName`, `photoURL`, `countryCode`,
+     `resolvedHemisphere`, `isPundit`) so leaderboard filters never need joins
+   - Resolve `resolvedHemisphere` from the tournament config + `countryCode` (for example,
+     Nations Championship can override `JP -> south` without making Japan a globally southern user)
 5. **Propagate to leaderboards** (see DATA_MODEL.md for eager/lazy strategy):
    - Global leaderboard (eager)
    - Hemisphere/Pundit leaderboards (eager)

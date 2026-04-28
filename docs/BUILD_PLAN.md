@@ -78,9 +78,9 @@ Before starting any milestone, understand these principles:
 **In scope:**
 - Update `users/{userId}` schema:
   * `countryCode?: string` (ISO 3166-1 alpha-2)
-  * `hemisphere?: "north" | "south"`
+  * `hemisphere?: "north" | "south"` (legacy/back-compat only)
   * `isPundit: boolean`
-- Profile edit UI for users to set country and hemisphere
+- Profile edit UI for users to set country; hemisphere is resolved per tournament from country + tournament rules
 - Admin UI to flag users as pundits
 - Denormalize these fields into `user_tournament_stats` on score update
 - Composite indexes for filtering
@@ -88,8 +88,8 @@ Before starting any milestone, understand these principles:
 **Out of scope:** Leaderboard UI
 
 **Done looks like:**
-- Users can set their country and hemisphere
-- `user_tournament_stats` has countryCode, hemisphere, isPundit for filtering
+- Users can set their country
+- `user_tournament_stats` has countryCode, resolvedHemisphere, isPundit for filtering
 - Ready for dynamic leaderboard queries
 
 ### Milestone 8: Global & Dynamic Leaderboards

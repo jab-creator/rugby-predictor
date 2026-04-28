@@ -19,7 +19,7 @@ async function getCurrentUid(page: import('@playwright/test').Page): Promise<str
 }
 
 test.describe('Profile page', () => {
-  test('saves country and hemisphere and syncs tournament stats', async ({ page }) => {
+  test('saves country and syncs tournament-specific resolved hemisphere to stats', async ({ page }) => {
     await page.goto('/profile');
     await expect(page.getByRole('heading', { name: /profile/i })).toBeVisible();
 
@@ -35,13 +35,13 @@ test.describe('Profile page', () => {
       scoredMatchCount: 1,
       displayName: TEST_USER.displayName,
       countryCode: 'GB',
+      resolvedHemisphere: 'north',
       hemisphere: 'north',
       isPundit: false,
       updatedAt: new Date(),
     });
 
-    await page.getByLabel(/country code/i).fill('nz');
-    await page.getByLabel(/hemisphere/i).selectOption('south');
+    await page.getByLabel(/country code/i).fill('jp');
     await page.getByRole('button', { name: /save profile/i }).click();
 
     await expect(page.getByText(/profile saved/i)).toBeVisible();
@@ -49,16 +49,17 @@ test.describe('Profile page', () => {
 
     await expect
       .poll(async () => (await getUserProfileDoc(uid))?.countryCode)
-      .toBe('NZ');
-    await expect
-      .poll(async () => (await getUserProfileDoc(uid))?.hemisphere)
-      .toBe('south');
+      .toBe('JP');
     await expect
       .poll(async () => (await getUserTournamentStats(TEST_SEASON_ID, uid))?.countryCode)
-      .toBe('NZ');
+      .toBe('JP');
+    await expect
+      .poll(async () => (await getUserTournamentStats(TEST_SEASON_ID, uid))?.resolvedHemisphere)
+      .toBe('south');
     await expect
       .poll(async () => (await getUserTournamentStats(TEST_SEASON_ID, uid))?.hemisphere)
-      .toBe('south');
+      .toBeUndefined();
+
   });
 
   test('shows client validation for invalid country codes', async ({ page }) => {

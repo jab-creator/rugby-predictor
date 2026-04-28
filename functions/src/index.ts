@@ -170,7 +170,6 @@ function relevantUserProfileFields(profile: UserProfileDoc | null | undefined) {
     displayName: profile?.displayName ?? null,
     photoURL: profile?.photoURL ?? null,
     countryCode: profile?.countryCode ?? null,
-    hemisphere: profile?.hemisphere ?? null,
     isPundit: profile?.isPundit ?? false,
   };
 }
