@@ -96,6 +96,9 @@ Only these require stored memberships:
    cp .env.example .env.local
    ```
    For local development with emulators, the provided `.env.local` has placeholder values that work out of the box.
+   If E2E fails with `FirebaseError: auth/invalid-api-key`, ensure `.env.local` includes:
+   `NEXT_PUBLIC_FIREBASE_API_KEY=fake-api-key-for-emulator` and
+   `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true`.
 
 3. Build Cloud Functions (required before starting the emulators):
    ```bash
@@ -109,6 +112,7 @@ Only these require stored memberships:
    ```
 
 5. Run the emulators (see below) and, if you hit port errors, kill any processes listening on 4000, 9099, 8080, etc., or choose alternate ports via `firebase.json`.
+   E2E global setup expects emulators to be reachable at Auth `localhost:9099`, Firestore `localhost:8080`, and Functions `localhost:5001`; otherwise `clearFirestore()` fails with `TypeError: fetch failed`.
 
 ### Running the app
 
