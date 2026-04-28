@@ -192,6 +192,16 @@ export default function PoolDetailPage() {
           </div>
         </div>
 
+
+        <div className="mt-8">
+          <button
+            onClick={() => router.push(`/pools/${poolId}/leaderboard`)}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+          >
+            View Leaderboard
+          </button>
+        </div>
+
         <div className="mt-8 p-4 bg-blue-50 dark:bg-blue-900 rounded-lg">
           <p className="text-sm text-blue-800 dark:text-blue-200">
             <strong>Share this pool:</strong> Give your friends the join code <strong className="font-mono">{pool.joinCode}</strong> so they can join and start making predictions!
