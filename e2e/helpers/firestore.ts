@@ -265,6 +265,13 @@ export async function setUserTournamentStatsDoc(
   await getAdminDb().doc(`user_tournament_stats/${tournamentId}_${userId}`).set(data, { merge: true });
 }
 
+export async function setSeasonLeaderboardConfig(
+  seasonId: string,
+  leaderboardConfig: Record<string, boolean>,
+): Promise<void> {
+  await getAdminDb().doc(`seasons/${seasonId}`).set({ leaderboardConfig }, { merge: true });
+}
+
 /**
  * Write a pick_status document directly.
  * NOTE: security rules require request.auth — this only works when called from
