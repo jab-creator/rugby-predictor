@@ -515,12 +515,23 @@ export const lockPick = functions.https.onCall(async (data, context) => {
   });
 
   const lockedAt = lockedAtToReturn ?? now;
-  await upsertLastLockedPredictionAt({
-    db,
-    tournamentId: seasonId,
-    userId,
-    lockedAt,
-  });
+
+  try {
+    await upsertLastLockedPredictionAt({
+      db,
+      tournamentId: seasonId,
+      userId,
+      lockedAt,
+    });
+  } catch (error) {
+    functions.logger.error('lockPick: failed to upsert lastLockedPredictionAt', {
+      poolId,
+      seasonId,
+      matchId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   return { lockedAt: lockedAt.toDate().toISOString() };
 });
