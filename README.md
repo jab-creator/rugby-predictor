@@ -226,3 +226,12 @@ rugby-predictor/
 - [x] Unit + Playwright coverage verifies universal scoring and idempotent re-runs
 
 **Next:** Milestone 7 — User attributes and denormalization into `user_tournament_stats` for dynamic leaderboard filters
+
+# Dev Notes
+
+## 2026-04-28
+- Functions build now works.
+- lockPick is present in functions/lib/index.js.
+- Need local env project ID to match emulator: demo-six-nations-predictor.
+- Real-time pick/status updates are working across users.
+- Next thing to test: locking flow after clean emulator/dev restart.
