@@ -58,6 +58,7 @@ export default defineConfig({
         '**/multi-user.spec.ts',
         '**/locking.spec.ts',
         '**/scoring.spec.ts',
+        '**/manual-pool-leaderboard.spec.ts',
         '**/profile.spec.ts',
         '**/admin.spec.ts',
       ],

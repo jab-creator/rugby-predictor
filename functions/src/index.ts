@@ -45,6 +45,10 @@ interface PredictionDoc {
   lockedAt: admin.firestore.Timestamp | null;
   createdAt: admin.firestore.Timestamp;
   updatedAt: admin.firestore.Timestamp;
+  winnerCorrect?: boolean;
+  err?: number;
+  marginBonus?: number;
+  totalPoints?: number;
 }
 
 type BatchWrite =
@@ -534,6 +538,192 @@ export const lockPick = functions.https.onCall(async (data, context) => {
   }
 
   return { lockedAt: lockedAt.toDate().toISOString() };
+});
+
+// ---------- getPoolMatchPredictions: redacted member prediction details ----------
+
+function serializeTimestamp(value: admin.firestore.Timestamp | null | undefined): string | null {
+  return value ? value.toDate().toISOString() : null;
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' ? value : null;
+}
+
+export const getPoolMatchPredictions = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+  }
+
+  const viewerId = context.auth.uid;
+  const { poolId, matchId } = data as { poolId?: string; matchId?: string };
+
+  if (!poolId || !matchId) {
+    throw new functions.https.HttpsError('invalid-argument', 'poolId and matchId required');
+  }
+
+  const [poolSnap, viewerMemberSnap] = await Promise.all([
+    db.collection('pools').doc(poolId).get(),
+    db.collection('pools').doc(poolId).collection('members').doc(viewerId).get(),
+  ]);
+
+  if (!poolSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Pool not found');
+  }
+
+  if (!viewerMemberSnap.exists) {
+    throw new functions.https.HttpsError('permission-denied', 'Not a pool member');
+  }
+
+  const pool = poolSnap.data() as { seasonId?: string };
+  if (!pool.seasonId) {
+    throw new functions.https.HttpsError('failed-precondition', 'Pool is missing seasonId');
+  }
+
+  const matchSnap = await db
+    .collection('seasons').doc(pool.seasonId)
+    .collection('matches').doc(matchId)
+    .get();
+
+  if (!matchSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'Match not found');
+  }
+
+  const match = matchSnap.data() as MatchScoringDoc;
+  const membersSnap = await db.collection('pools').doc(poolId).collection('members').get();
+  const memberDocs = membersSnap.docs.map((memberDoc) => ({
+    id: memberDoc.id,
+    data: memberDoc.data() as { displayName?: string; photoURL?: string },
+  }));
+
+  const statusSnap = await db
+    .collection('pools').doc(poolId)
+    .collection('picks_status')
+    .where('matchId', '==', matchId)
+    .get();
+
+  const statusesByUser = new Map<string, LegacyStatus>();
+  statusSnap.docs.forEach((statusDoc) => {
+    const status = statusDoc.data() as LegacyStatus;
+    statusesByUser.set(status.userId, status);
+  });
+
+  const predictionSnaps = await Promise.all(
+    memberDocs.map(({ id }) => db.collection('predictions').doc(getPredictionDocId(id, matchId)).get()),
+  );
+  const legacyDetailSnaps = await Promise.all(
+    memberDocs.map(({ id }) =>
+      db.collection('pools').doc(poolId)
+        .collection('picks_detail')
+        .doc(getLegacyPickDocId(matchId, id))
+        .get()
+    ),
+  );
+
+  const predictionsByUser = new Map<string, PredictionDoc>();
+  predictionSnaps.forEach((predictionSnap, index) => {
+    if (predictionSnap.exists) {
+      predictionsByUser.set(memberDocs[index].id, predictionSnap.data() as PredictionDoc);
+    }
+  });
+
+  const legacyDetailsByUser = new Map<string, LegacyDetail>();
+  legacyDetailSnaps.forEach((legacyDetailSnap, index) => {
+    if (legacyDetailSnap.exists) {
+      legacyDetailsByUser.set(memberDocs[index].id, legacyDetailSnap.data() as LegacyDetail);
+    }
+  });
+
+  const now = Timestamp.now();
+  const kickoffAt = match.kickoffAt;
+  const isAfterKickoff = now.toMillis() >= kickoffAt.toMillis();
+  const isFinal = match.status === 'final';
+
+  const viewerStatus = statusesByUser.get(viewerId);
+  const viewerPrediction = predictionsByUser.get(viewerId);
+  const viewerLocked =
+    viewerPrediction?.isLocked === true ||
+    viewerPrediction?.lockedAt != null ||
+    viewerStatus?.lockedAt != null;
+
+  const members = memberDocs.map(({ id, data }) => {
+    const status = statusesByUser.get(id);
+    const prediction = predictionsByUser.get(id);
+    const legacyDetail = legacyDetailsByUser.get(id);
+
+    const pickedWinnerTeamId = prediction?.winner ?? legacyDetail?.pickedWinnerTeamId ?? null;
+    const pickedMargin = prediction?.margin ?? legacyDetail?.pickedMargin ?? null;
+    const isComplete =
+      prediction?.isComplete === true ||
+      status?.isComplete === true ||
+      (pickedWinnerTeamId != null && pickedMargin != null);
+    const lockedAt = prediction?.lockedAt ?? status?.lockedAt ?? null;
+    const isLocked = prediction?.isLocked === true || lockedAt != null;
+    const canSeePrediction =
+      id === viewerId ||
+      isFinal ||
+      isAfterKickoff ||
+      (viewerLocked && isLocked);
+
+    if (!isComplete) {
+      return {
+        userId: id,
+        displayName: data.displayName ?? id,
+        photoURL: data.photoURL ?? '',
+        isCurrentUser: id === viewerId,
+        status: {
+          isComplete: false,
+          lockedAt: null,
+        },
+        visibility: 'no-pick',
+        prediction: null,
+      };
+    }
+
+    return {
+      userId: id,
+      displayName: data.displayName ?? id,
+      photoURL: data.photoURL ?? '',
+      isCurrentUser: id === viewerId,
+      status: {
+        isComplete,
+        lockedAt: serializeTimestamp(lockedAt),
+      },
+      visibility: canSeePrediction ? 'visible' : 'hidden',
+      prediction: canSeePrediction
+        ? {
+            pickedWinnerTeamId,
+            pickedMargin,
+            isLocked,
+            lockedAt: serializeTimestamp(lockedAt),
+            ...(isFinal
+              ? {
+                  totalPoints: nullableNumber(prediction?.totalPoints),
+                  err: nullableNumber(prediction?.err),
+                  winnerCorrect: typeof prediction?.winnerCorrect === 'boolean'
+                    ? prediction.winnerCorrect
+                    : null,
+                }
+              : {}),
+          }
+        : null,
+    };
+  });
+
+  return {
+    matchId,
+    matchStatus: match.status,
+    kickoffAt: serializeTimestamp(kickoffAt),
+    result: isFinal
+      ? {
+          homeScore: nullableNumber(match.homeScore),
+          awayScore: nullableNumber(match.awayScore),
+          actualWinner: match.actualWinner ?? null,
+          actualMargin: nullableNumber(match.actualMargin),
+        }
+      : null,
+    members,
+  };
 });
 
 

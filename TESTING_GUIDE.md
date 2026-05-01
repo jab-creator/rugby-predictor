@@ -1,4 +1,40 @@
-# Testing Guide: Milestone 2
+# Testing Guide
+
+## Current emulator-backed verification
+
+Run these commands from the repository root unless noted.
+
+1. Build Cloud Functions before starting emulators:
+   ```bash
+   cd functions
+   npm run build
+   cd ..
+   ```
+
+2. Start Firebase emulators in one terminal:
+   ```bash
+   npm run emulators
+   ```
+
+3. Run Playwright E2E in a second terminal. The Playwright config starts the Next.js dev server automatically:
+   ```bash
+   npm run test:e2e
+   ```
+
+4. For local build/unit verification:
+   ```bash
+   npm run build
+   cd functions
+   npm run build
+   npm test
+   cd ..
+   ```
+
+The E2E suite expects Auth at `localhost:9099`, Firestore at `localhost:8080`, Functions at `localhost:5001`, and the app at `localhost:3000`.
+
+---
+
+# Legacy Manual Testing Guide: Milestone 2
 
 ## Prerequisites
 - Node.js 18+ installed

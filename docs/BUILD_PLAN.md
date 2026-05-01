@@ -1,6 +1,6 @@
 # Build Plan — General Rugby Predictor Platform
 
-This build plan reflects the evolution from a Six Nations-only predictor to a general rugby prediction platform with universal scoring, dynamic leaderboards, and knockout stages.
+This build plan reflects the evolution from a Six Nations-only predictor to a general rugby prediction platform with universal scoring, dynamic leaderboards, manual pool leaderboards, member prediction visibility, and knockout stages.
 
 ## Core Architecture Principles
 
@@ -10,13 +10,20 @@ Before starting any milestone, understand these principles:
 2. **No Pool-Specific Scoring:** Pools change ranking context, NOT scoring rules
 3. **Dynamic Pools:** Global, country, hemisphere, pundits — calculated from user attributes
 4. **Manual Pools:** Only for friends, pundits, challenges, knockout — stored membership
-5. **Precomputed Leaderboards:** Ranks are precomputed after each match, not on the fly
+5. **Scoring Aggregates Are Maintained by Finalization:** Scoring/leaderboard aggregate data must be updated by scoring/finalization flows, not computed only when a user first views a leaderboard
+6. **UI Data May Lazy-Load:** It is acceptable for the UI to query/subcribe to leaderboard display data only when the leaderboard page or tab opens
+
+### Lazy-Loading Clarification
+
+- Aggregation lazy-on-first-view: **No**
+- UI query/subscription lazy-loaded on page open: **Yes**
+- `user_tournament_stats` remains the reliable source of truth for leaderboard rows until stored leaderboard projections are implemented and verified.
 
 ---
 
 ## Milestone Status
 
-### ✅ Completed (Current State)
+### Verified Complete
 
 #### Milestone 0: Scaffold
 - Next.js 14 + React 18 + TypeScript
@@ -26,28 +33,30 @@ Before starting any milestone, understand these principles:
 - Types defined
 
 #### Milestone 1: Auth + Pool Membership
-- Firebase Auth with Google sign-in
+- Firebase Auth with emulator-backed E2E auth helpers
 - Create/join pools with joinCode
 - Members list
 - User profiles
 
 #### Milestone 2: Fixtures & Round View
-- Six Nations 2025 fixtures
+- Nations Championship fixture model under `seasons/{seasonId}/matches`
 - Seed utility
 - Round navigation
 - Pick UI (winner + margin)
 
 #### Milestone 3: Autosave Picks + Status Dots
-- Dual-doc pattern (picks_detail + picks_status)
+- Dual-doc compatibility pattern (`picks_detail` + `picks_status`)
 - Autosave with debounce
 - Real-time status listeners
 - Status dots per member
+- E2E coverage exists for autosave behavior
 
 #### Milestone 4: Per-match Irreversible Locking
 - `lockPick` Cloud Function
-- Auto-lock at kickoff
+- Auto-lock at kickoff path
 - Lock button + bulk lock
 - Security rules enforcement
+- E2E coverage verifies locking and `lastLockedPredictionAt`
 
 #### Milestone 5: Universal Predictions Collection
 - Canonical `predictions/{userId_matchId}` collection added
@@ -66,36 +75,53 @@ Before starting any milestone, understand these principles:
 - Finalized matches render read-only with visible final-score state in the current round view
 - Unit + Playwright coverage verifies universal scoring output and idempotency
 
----
-
-## Upcoming Milestones (Restructured for General Rugby Predictor)
-
-## Phase 2: Dynamic Leaderboards
-
-### Milestone 7: User Attributes & Denormalization
+#### Milestone 7: User Attributes & Denormalization
 **Goal:** Add user attributes for dynamic pool filtering
 
-**In scope:**
-- Update `users/{userId}` schema:
+**Verified complete:**
+- `users/{userId}` schema supports:
   * `countryCode?: string` (ISO 3166-1 alpha-2)
   * `hemisphere?: "north" | "south"` (legacy/back-compat only)
   * `isPundit: boolean`
-- Profile edit UI for users to set country; hemisphere is resolved per tournament from country + tournament rules
-- Admin UI to flag users as pundits
-- Denormalize these fields into `user_tournament_stats` on score update
-- Composite indexes for filtering
-
-**Out of scope:** Leaderboard UI
+- Profile edit UI lets users set country; hemisphere is resolved per tournament from country + tournament rules
+- Admin UI can flag users as pundits
+- Scoring/profile sync denormalizes fields into `user_tournament_stats`
+- Composite indexes exist for filtered leaderboard queries
 
 **Done looks like:**
 - Users can set their country
 - `user_tournament_stats` has countryCode, resolvedHemisphere, isPundit for filtering
 - Ready for dynamic leaderboard queries
 
-### Milestone 8: Global & Dynamic Leaderboards
-**Goal:** Build precomputed leaderboards with summary stats and cross-group comparison
+#### Milestone 8: Global & Dynamic Leaderboards
+**Goal:** Build leaderboard views with universal scores and dynamic filters
 
-**In scope:**
+**Verified complete in current implementation:**
+- Leaderboard UI route exists at `/pools/{poolId}/leaderboard`
+- UI supports Overall, Country, Hemisphere, and Pundits tabs
+- UI queries `user_tournament_stats` directly when the leaderboard page/tab opens
+- Rows sort by the agreed tiebreaker chain:
+  * `totalPoints DESC`
+  * `correctWinners DESC`
+  * `sumErrOnCorrectWinners ASC`
+  * `exactScores DESC`
+  * `lastLockedPredictionAt ASC`
+- Country selector queries `countryCode`
+- Hemisphere selector queries `resolvedHemisphere`
+- Pundits tab queries `isPundit == true`
+- E2E coverage verifies overall render and dynamic filters
+
+**Implemented but needs test coverage or future expansion:**
+- Stored `leaderboards/{leaderboardId}` metadata and `entries/{userId}` projections are defined in docs/data model but are not the verified current implementation
+- Summary stats (`avgPoints`, `medianPoints`, `top10AvgPoints`, `winnerPoints`, `percentileBuckets`) are not verified in UI or functions
+- Per-entry percentile display is not verified in UI
+- Cross-group comparison copy such as "North avg vs South avg" is not verified
+
+**Corrected scope note:**
+- Do **not** lazy-compute leaderboard/scoring aggregates only when someone first views a leaderboard.
+- Current verified behavior reads maintained `user_tournament_stats` rows on page/tab open. This is acceptable UI lazy-loading.
+
+**Original full target scope retained for future implementation:**
 - `leaderboards/{leaderboardId}` collection with **tournament-scoped IDs**:
   * `{tournamentId}__global`, `{tournamentId}__country_CA`, `{tournamentId}__hemisphere_north`, etc.
 - `leaderboards/{leaderboardId}/entries/{userId}` subcollection
@@ -106,12 +132,12 @@ Before starting any milestone, understand these principles:
   * `percentile` (0–100 within this leaderboard)
 - Cloud Function `updateLeaderboards(tournamentId)`:
   * Triggered after scoring updates
-  * **Eager:** Global, hemisphere, pundits — updated immediately
-  * **Lazy:** Country leaderboards — via queue or on-read refresh
+  * Eager: Global, hemisphere, pundits — updated immediately
+  * Deferred/background: Country leaderboards — via queue or scheduled/batch refresh, but not scoring-on-first-view
   * Queries `user_tournament_stats` with filters
-  * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC, sumErrOnCorrectWinners ASC, exactScores DESC, lastLockedPredictionAt ASC
-  * Computes tie-aware ranks (equal metrics → same rank, next = rank + tied count)
-  * Computes summary stats (avg, median, percentiles) for leaderboard metadata
+  * Sorts by tiebreaker chain
+  * Computes tie-aware ranks (equal metrics -> same rank, next = rank + tied count)
+  * Computes summary stats for leaderboard metadata
   * Writes leaderboard entries with rank + percentile
 - Leaderboard UI:
   * Global leaderboard (all users)
@@ -121,32 +147,24 @@ Before starting any milestone, understand these principles:
   * "Your score: 82 pts | Global: 14th | Canada: 2nd"
   * Cross-group comparison: "North avg: 64 pts vs South avg: 58 pts"
 
-**Out of scope:** Manual pools, knockout
+**Out of scope for verified M8:** Manual pools, knockout
 
-**Done looks like:**
-- Users see their rank in multiple leaderboards
-- Same score everywhere, different ranks
-- Tied users share the same rank
-- Leaderboard metadata includes summary stats
-- Cross-group comparison possible via summary stats
-- Per-entry percentile enables normalized comparison
-- Leaderboards update automatically (eager for public, lazy for niche)
-
-**Kickoff prompt:**
+**Kickoff prompt retained for future stored leaderboard projection work:**
 ```
-Rugby predictor, Milestone 8: Dynamic Leaderboards.
-M0–M7 done. Scoring engine and user_tournament_stats working.
+Rugby predictor, Milestone 8 stored projections: Dynamic Leaderboards.
+M0-M7 done. Scoring engine and user_tournament_stats working.
 
 In scope:
-- Precomputed leaderboards (global, country, hemisphere, pundits)
+- Precomputed/stored leaderboards (global, country, hemisphere, pundits)
 - Tournament-scoped IDs: {tournamentId}__global, {tournamentId}__country_CA, etc.
 - Leaderboard metadata with summary stats: avgPoints, medianPoints,
   top10AvgPoints, winnerPoints, percentileBuckets (p10/p25/p50/p75/p90)
 - Tie-aware ranking: equal metrics = same rank, next rank skips
-- Per-entry percentile (0–100 within leaderboard)
+- Per-entry percentile (0-100 within leaderboard)
 - Cloud Function updateLeaderboards(tournamentId):
+  * Triggered after scoring updates
   * Eager: global, hemisphere, pundits (immediate)
-  * Lazy: country leaderboards (queue or on-read)
+  * Deferred/background: country leaderboards (queue/scheduled/batch)
   * Queries user_tournament_stats with filters
   * Sorts by tiebreaker chain: totalPoints DESC, correctWinners DESC,
     sumErrOnCorrectWinners ASC, exactScores DESC, lastLockedPredictionAt ASC
@@ -161,6 +179,7 @@ Key constraints:
 - No pool-specific points — ever
 - Cross-group comparison uses summary stats, not raw rank
 - Ties are sports-style (shared rank, next skips)
+- Do not compute scoring aggregates only when a leaderboard is first viewed
 
 Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 ```
@@ -169,30 +188,50 @@ Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 
 ## Phase 3: Manual Pools & Pool Rankings
 
-### Milestone 9: Manual Pools with Universal Scoring
-**Goal:** Refactor pools to use universal scoring (no pool-specific scoring)
+### Milestone 9: Manual Pool Leaderboards & Member Prediction Visibility
+**Goal:** Add manual pool ranking context and correct member prediction visibility while preserving universal scoring
+
+**Status in current branch:** Implemented; full completion depends on final E2E verification passing after the current milestone test work.
 
 **In scope:**
 - Keep `pools/{poolId}` and `pools/{poolId}/members/{userId}`
-- Add `pools/{poolId}/entries/{userId}` (precomputed rankings)
-- Update join pool flow to work with universal predictions
-- Pool detail page:
-  * Shows pool members
-  * Shows pool leaderboard (same scores from user_tournament_stats, different ranks)
-  * Members can see each other's predictions (subject to lock/kickoff visibility)
-- Cloud Function `updatePoolLeaderboards`:
-  * Queries user_tournament_stats for pool members
-  * Computes tie-aware ranks within pool
-  * Computes per-entry percentile
-  * Writes pools/{poolId}/entries/{userId}
-  * Updated **lazily** (on read or via batch job), not synchronously after every match
+- Manual pool leaderboard view:
+  * Uses the same `user_tournament_stats` scores as global/dynamic leaderboards
+  * Ranks only stored pool members
+  * Shows rank, display name, totalPoints, correctWinners, sumErrOnCorrectWinners, exactScores
+  * Sorts by:
+    1. `totalPoints DESC`
+    2. `correctWinners DESC`
+    3. `sumErrOnCorrectWinners ASC`
+    4. `exactScores DESC`
+    5. `lastLockedPredictionAt ASC`
+- Pool member prediction visibility:
+  * Users can always see their own predictions
+  * Before kickoff, users can see other members' prediction status
+  * Before kickoff, prediction details are visible between two members only if both have locked that same match
+  * If only one member has locked, prediction details remain hidden and only status is visible
+  * After kickoff, prediction details are visible to pool members
+  * After final, predictions, actual result, points earned, margin error, and winner correctness are visible
+- Robust Playwright E2E coverage using Firebase emulators:
+  * Create/sign in at least 3 test users
+  * Create/join one manual pool
+  * Seed at least 4 matches
+  * Submit and lock predictions for all users
+  * Verify hidden/visible prediction details before kickoff based on mutual lock state
+  * Finalize matches
+  * Verify leaderboard sorting and score values
 
 **Out of scope:** Pundit pools, knockout
 
 **Done looks like:**
 - Pools work as friend/challenge groups
 - Pool rankings show same scores as global, different ranks
-- "You: 82 pts | Pool rank: 3/20 | Global rank: 142"
+- Prediction details are redacted exactly by lock/kickoff/final state
+- "You: 82 pts | Pool rank: 3/20 | Global rank: 142" remains a future enhancement unless verified
+
+**Needs verification:**
+- Full `npm run test:e2e` pass after Milestone 9 implementation
+- Any stored `pools/{poolId}/entries/{userId}` projection path, if later implemented, must be maintained by scoring/finalization or a background refresh flow, not scoring-on-first-view
 
 ---
 
@@ -323,20 +362,50 @@ Read docs/DATA_MODEL.md (Leaderboards section) before starting.
 - **Test that scoring is universal and identical for all users**
 - **Verify same score appears in all leaderboards**
 - **Pools change rank, not score — never create pool-specific points**
-- **Precompute ranks, don't calculate on the fly**
+- **Do not lazy-compute scoring aggregates only when a leaderboard is first viewed**
+- **UI leaderboard queries may lazy-load on page/tab open**
 - **Use tournament-scoped leaderboard IDs** (`{tournamentId}__{type}`)
 - **Handle ties sports-style** (equal metrics = same rank, next skips)
 - **Cross-group comparison uses summary stats and percentile**, not raw rank
-- **Leaderboard updates use eager/lazy split** for scaling
 - **Scoring must be safely rebuildable** from scored predictions
+
+---
+
+## Local Verification Commands
+
+Build and unit tests:
+
+```bash
+npm run build
+cd functions && npm run build && npm test && cd ..
+```
+
+E2E tests require Firebase emulators in one terminal:
+
+```bash
+npm run emulators
+```
+
+Then run Playwright in another terminal:
+
+```bash
+npm run test:e2e
+```
+
+E2E expects:
+- Auth emulator: `localhost:9099`
+- Firestore emulator: `localhost:8080`
+- Functions emulator: `localhost:5001`
+- Next.js app: `localhost:3000` (started by Playwright config)
 
 ---
 
 ## Summary
 
-- **Current:** Milestone 4 complete (pool-based picks with locking)
-- **Next:** Milestone 5–6 (universal predictions and scoring)
-- **MVP:** Through Milestone 8 (global + dynamic leaderboards)
+- **Verified current:** Milestones 0-8 are implemented for the current direct-query leaderboard scope
+- **Current work:** Milestone 9 manual pool leaderboard + member prediction visibility
+- **Needs verification:** Full Milestone 9 E2E pass
+- **MVP:** Through Milestone 9 for friend pools with universal scoring
 - **Full platform:** Through Milestone 12 (knockout stages)
-- **Viral growth:** Milestone 13–14 (sharing and badges)
+- **Viral growth:** Milestone 13-14 (sharing and badges)
 - **Production:** Milestone 15

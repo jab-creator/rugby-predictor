@@ -6,6 +6,7 @@ import {
   LeaderboardTab,
   getLeaderboardEntries,
   getLeaderboardTabs,
+  getManualPoolLeaderboardEntries,
   getTournamentLeaderboardConfig,
 } from '@/lib/leaderboard';
 import { getPool } from '@/lib/pools';
@@ -23,7 +24,7 @@ export default function PoolLeaderboardPage() {
   const [poolName, setPoolName] = useState('');
   const [tournamentId, setTournamentId] = useState('');
   const [tabs, setTabs] = useState<Array<{ id: LeaderboardTab; label: string }>>([]);
-  const [activeTab, setActiveTab] = useState<LeaderboardTab>('overall');
+  const [activeTab, setActiveTab] = useState<LeaderboardTab>('pool');
   const [selectedCountryCode, setSelectedCountryCode] = useState('');
   const [selectedHemisphere, setSelectedHemisphere] = useState<'north' | 'south'>('north');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -79,12 +80,14 @@ export default function PoolLeaderboardPage() {
     const loadEntries = async () => {
       try {
         setLoadingData(true);
-        const nextEntries = await getLeaderboardEntries({
-          tournamentId,
-          tab: activeTab,
-          countryCode: selectedCountryCode,
-          hemisphere: selectedHemisphere,
-        });
+        const nextEntries = activeTab === 'pool'
+          ? await getManualPoolLeaderboardEntries({ poolId, tournamentId })
+          : await getLeaderboardEntries({
+              tournamentId,
+              tab: activeTab,
+              countryCode: selectedCountryCode,
+              hemisphere: selectedHemisphere,
+            });
         setEntries(nextEntries);
       } catch (err) {
         console.error('Failed to load leaderboard entries', err);
@@ -95,7 +98,7 @@ export default function PoolLeaderboardPage() {
     };
 
     void loadEntries();
-  }, [tournamentId, tabs, activeTab, selectedCountryCode, selectedHemisphere]);
+  }, [poolId, tournamentId, tabs, activeTab, selectedCountryCode, selectedHemisphere]);
 
   const emptyMessage = useMemo(() => {
     if (activeTab === 'country') {
@@ -111,6 +114,10 @@ export default function PoolLeaderboardPage() {
 
     if (activeTab === 'pundit') {
       return 'No pundits found for this tournament yet.';
+    }
+
+    if (activeTab === 'pool') {
+      return 'No pool members have leaderboard rows yet.';
     }
 
     return 'No leaderboard rows available yet.';

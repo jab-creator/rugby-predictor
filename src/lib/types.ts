@@ -243,3 +243,42 @@ export interface LeaderboardEntry {
   // Normalized context for cross-leaderboard comparison
   percentile?: number;     // 0–100 within this leaderboard
 }
+
+// Pool member prediction visibility returned by the server-side redaction path
+export interface PoolMatchResultView {
+  homeScore: number | null;
+  awayScore: number | null;
+  actualWinner?: TeamId | null;
+  actualMargin?: number | null;
+}
+
+export interface PoolMemberPredictionDetail {
+  pickedWinnerTeamId: TeamId | null;
+  pickedMargin: number | null;
+  isLocked: boolean;
+  lockedAt: string | null;
+  totalPoints?: number | null;
+  err?: number | null;
+  winnerCorrect?: boolean | null;
+}
+
+export interface PoolMemberPredictionView {
+  userId: string;
+  displayName: string;
+  photoURL?: string;
+  isCurrentUser: boolean;
+  status: {
+    isComplete: boolean;
+    lockedAt: string | null;
+  };
+  visibility: 'visible' | 'hidden' | 'no-pick';
+  prediction: PoolMemberPredictionDetail | null;
+}
+
+export interface PoolMatchPredictionsView {
+  matchId: string;
+  matchStatus: MatchStatus;
+  kickoffAt: string;
+  result: PoolMatchResultView | null;
+  members: PoolMemberPredictionView[];
+}

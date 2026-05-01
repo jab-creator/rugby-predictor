@@ -7,8 +7,9 @@ import { getPool, getMatchesForRound, getPoolMembers } from '@/lib/pools';
 import { subscribeToMatchesStatuses } from '@/lib/picks';
 import { lockPick, lockAllCompletedPicks, getLockableMatchIds } from '@/lib/locks';
 import { finalizeMatchResult } from '@/lib/results';
+import { getPoolMatchPredictions } from '@/lib/pool-predictions';
 import { TEAM_NAMES } from '@/lib/fixtures';
-import { Pool, Match, PoolMember, PickStatus } from '@/lib/types';
+import { Pool, Match, PoolMember, PickStatus, PoolMatchPredictionsView } from '@/lib/types';
 import Header from '@/components/Header';
 import MatchCard from '@/components/MatchCard';
 import MemberStatusList from '@/components/MemberStatusList';
@@ -39,6 +40,7 @@ export default function RoundPage() {
   const [matches, setMatches] = useState<MatchWithId[]>([]);
   const [members, setMembers] = useState<Array<{ id: string; member: PoolMember }>>([]);
   const [matchStatuses, setMatchStatuses] = useState<Map<string, Map<string, PickStatus>>>(new Map());
+  const [memberPredictions, setMemberPredictions] = useState<Map<string, PoolMatchPredictionsView>>(new Map());
   const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState('');
   const [bulkLocking, setBulkLocking] = useState(false);
@@ -56,6 +58,26 @@ export default function RoundPage() {
     }
   }, [user, loading, poolId, round, router]);
 
+  const loadMemberPredictionsForMatches = async (matchIds: string[]) => {
+    if (!poolId || matchIds.length === 0) return;
+
+    try {
+      const views = await Promise.all(
+        matchIds.map((matchId) => getPoolMatchPredictions(poolId, matchId)),
+      );
+
+      setMemberPredictions((prev) => {
+        const next = new Map(prev);
+        views.forEach((view) => {
+          next.set(view.matchId, view);
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error('Error loading member prediction visibility:', err);
+    }
+  };
+
   // Subscribe to real-time status updates for all matches in this round
   useEffect(() => {
     if (!poolId || matches.length === 0) return;
@@ -68,6 +90,7 @@ export default function RoundPage() {
         newMap.set(matchId, statuses);
         return newMap;
       });
+      void loadMemberPredictionsForMatches([matchId]);
     });
 
     return () => {
@@ -113,6 +136,7 @@ export default function RoundPage() {
 
       const membersData = await getPoolMembers(poolId);
       setMembers(membersData);
+      void loadMemberPredictionsForMatches(matchesData.map(({ id }) => id));
     } catch (err) {
       console.error('Error loading round:', err);
       setError('Failed to load round data');
@@ -204,6 +228,7 @@ export default function RoundPage() {
         error: '',
         success: result.scored ? 'Match finalized and scored.' : 'Match was already finalized.',
       }));
+      void loadMemberPredictionsForMatches([matchId]);
     } catch (err) {
       console.error('Error finalizing match:', err);
       updateResultForm(matchId, (current) => ({
@@ -371,7 +396,11 @@ export default function RoundPage() {
               const resultForm = getResultForm(id, match);
 
               return (
-                <div key={id} className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                <div
+                  key={id}
+                  data-testid={`match-section-${id}`}
+                  className="border-2 border-gray-200 dark:border-gray-700 rounded-lg p-6"
+                >
                   <MatchCard
                     matchId={id}
                     match={match}
@@ -467,7 +496,13 @@ export default function RoundPage() {
                       <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
                         Pool Status ({statuses.size}/{members.length} picked)
                       </h3>
-                      <MemberStatusList members={members} statuses={statuses} createdBy={pool?.createdBy} />
+                      <MemberStatusList
+                        members={members}
+                        statuses={statuses}
+                        createdBy={pool?.createdBy}
+                        match={match}
+                        predictions={memberPredictions.get(id)?.members ?? []}
+                      />
                     </div>
                   )}
                 </div>
