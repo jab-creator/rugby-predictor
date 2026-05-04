@@ -10,6 +10,9 @@ import { test, expect, Browser } from '@playwright/test';
 import { createTestPool, deletePool, addPoolMember } from './helpers/firestore';
 import { createTestUser, injectAuthState } from './helpers/auth';
 import { TEST_USER, TEST_USER_2, TEST_SEASON_ID } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
+
+const ROUND_1_MATCH_ID = `${TEST_SEASON_ID}-r1-JPN-ITA`;
 
 async function getCurrentUid(page: import('@playwright/test').Page): Promise<string> {
   return page.evaluate(() => {
@@ -25,12 +28,9 @@ async function openAsUser2(browser: Browser): Promise<import('@playwright/test')
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto('/');
-  await page.waitForLoadState('networkidle');
   await injectAuthState(page, user2);
   await page.reload();
-  await page.waitForLoadState('networkidle');
-  // Wait for auth to hydrate
-  await page.waitForSelector(`text=${TEST_USER_2.displayName}`, { timeout: 10_000 });
+  await waitForUserHeader(page, TEST_USER_2.displayName);
   return page;
 }
 
@@ -41,7 +41,7 @@ test.describe('Multi-user — pool membership', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     user1Uid = await getCurrentUid(page);
     const pool = await createTestPool(user1Uid, TEST_USER.displayName, 'Multi-User Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
@@ -57,7 +57,7 @@ test.describe('Multi-user — pool membership', () => {
 
     try {
       await page2.goto('/pools/join');
-      await page2.waitForLoadState('networkidle');
+      await expect(page2.getByRole('heading', { name: /join a pool/i })).toBeVisible();
 
       await page2.getByLabel(/join code/i).fill(joinCode);
       await page2.getByRole('button', { name: /join pool/i }).click();
@@ -75,10 +75,11 @@ test.describe('Multi-user — pool membership', () => {
     await addPoolMember(poolId, user2.uid, TEST_USER_2.displayName);
 
     await page.goto(`/pools/${poolId}`);
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Multi-User Pool' })).toBeVisible();
 
-    await expect(page.getByText(TEST_USER.displayName)).toBeVisible();
-    await expect(page.getByText(TEST_USER_2.displayName)).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(main.getByText(TEST_USER.displayName)).toBeVisible();
+    await expect(main.getByText(TEST_USER_2.displayName)).toBeVisible();
   });
 
   test('members count updates to 2 after second user joins via UI', async ({ page, browser }) => {
@@ -86,14 +87,14 @@ test.describe('Multi-user — pool membership', () => {
 
     try {
       await page2.goto('/pools/join');
-      await page2.waitForLoadState('networkidle');
+      await expect(page2.getByRole('heading', { name: /join a pool/i })).toBeVisible();
       await page2.getByLabel(/join code/i).fill(joinCode);
       await page2.getByRole('button', { name: /join pool/i }).click();
       await expect(page2).toHaveURL(`/pools/${poolId}`, { timeout: 10_000 });
 
       // Reload user1's pool detail to see updated member count
       await page.goto(`/pools/${poolId}`);
-      await page.waitForLoadState('networkidle');
+      await expect(page.getByRole('heading', { name: 'Multi-User Pool' })).toBeVisible();
       await expect(page.getByText(/members.*2/i)).toBeVisible({ timeout: 5_000 });
     } finally {
       await page2.context().close();
@@ -103,7 +104,7 @@ test.describe('Multi-user — pool membership', () => {
   test('joining a pool you are already in shows "already a member" error', async ({ page }) => {
     // User 1 tries to join their own pool
     await page.goto('/pools/join');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: /join a pool/i })).toBeVisible();
 
     await page.getByLabel(/join code/i).fill(joinCode);
     await page.getByRole('button', { name: /join pool/i }).click();
@@ -119,7 +120,7 @@ test.describe('Multi-user — pick status dots', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     user1Uid = await getCurrentUid(page);
 
     const user2 = await createTestUser(TEST_USER_2.email, TEST_USER_2.password, TEST_USER_2.displayName);
@@ -137,23 +138,25 @@ test.describe('Multi-user — pick status dots', () => {
   test('user 2 status dot shown in round view', async ({ page }) => {
     // Navigate to round 1 as user 1
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Round 1' })).toBeVisible();
 
     // MemberStatusList should be visible (since there are 2 members)
-    await expect(page.getByText(TEST_USER_2.displayName)).toBeVisible({ timeout: 8_000 });
+    const section = page.getByTestId(`match-section-${ROUND_1_MATCH_ID}`);
+    await expect(section.getByText(TEST_USER_2.displayName)).toBeVisible({ timeout: 8_000 });
   });
 
   test('user 2 status dot turns green after their pick is saved (via REST)', async ({ page }) => {
     // First, get a match ID by reading from Firestore would be complex.
     // Instead verify the status list renders with both users shown.
     await page.goto(`/pools/${poolId}/round/1`);
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Round 1' })).toBeVisible();
 
     // Member status section should appear (> 1 member)
-    await expect(page.getByText(/pool status/i)).toBeVisible({ timeout: 8_000 });
+    const section = page.getByTestId(`match-section-${ROUND_1_MATCH_ID}`);
+    await expect(section.getByText(/pool status/i)).toBeVisible({ timeout: 8_000 });
 
     // Both users listed
-    await expect(page.getByText(TEST_USER.displayName)).toBeVisible();
-    await expect(page.getByText(TEST_USER_2.displayName)).toBeVisible();
+    await expect(section.getByText(TEST_USER.displayName)).toBeVisible();
+    await expect(section.getByText(TEST_USER_2.displayName)).toBeVisible();
   });
 });

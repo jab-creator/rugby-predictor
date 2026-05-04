@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { createTestPool, deletePool, setSeasonLeaderboardConfig, setUserTournamentStatsDoc } from './helpers/firestore';
 import { TEST_SEASON_ID, TEST_USER } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 async function getCurrentUid(page: import('@playwright/test').Page): Promise<string> {
   return page.evaluate(() => {
@@ -16,7 +17,7 @@ test.describe.serial('Milestone 8 — leaderboard UI and filters', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     uid = await getCurrentUid(page);
 
     const pool = await createTestPool(uid, TEST_USER.displayName, 'Leaderboard Pool', TEST_SEASON_ID);
@@ -47,6 +48,12 @@ test.describe.serial('Milestone 8 — leaderboard UI and filters', () => {
   });
 
   test.afterEach(async () => {
+    await setSeasonLeaderboardConfig(TEST_SEASON_ID, {
+      enableOverall: true,
+      enableCountry: true,
+      enableHemisphere: true,
+      enablePundit: true,
+    });
     await deletePool(poolId);
   });
 
@@ -60,6 +67,7 @@ test.describe.serial('Milestone 8 — leaderboard UI and filters', () => {
 
   test('country filter queries countryCode and supports empty state', async ({ page }) => {
     await page.goto(`/pools/${poolId}/leaderboard`);
+    await expect(page.getByRole('cell', { name: TEST_USER.displayName })).toBeVisible();
     await page.getByRole('tab', { name: 'Country' }).click();
 
     await page.getByLabel('Country code').fill('JP');
@@ -71,6 +79,7 @@ test.describe.serial('Milestone 8 — leaderboard UI and filters', () => {
 
   test('hemisphere filter uses resolvedHemisphere (not legacy hemisphere)', async ({ page }) => {
     await page.goto(`/pools/${poolId}/leaderboard`);
+    await expect(page.getByRole('cell', { name: TEST_USER.displayName })).toBeVisible();
     await page.getByRole('tab', { name: 'Hemisphere' }).click();
 
     await page.getByLabel('Hemisphere').selectOption('south');
@@ -82,6 +91,7 @@ test.describe.serial('Milestone 8 — leaderboard UI and filters', () => {
 
   test('pundit filter queries isPundit and disabled config tabs are hidden', async ({ page }) => {
     await page.goto(`/pools/${poolId}/leaderboard`);
+    await expect(page.getByRole('cell', { name: TEST_USER.displayName })).toBeVisible();
     await page.getByRole('tab', { name: 'Pundits' }).click();
     await expect(page.getByText('No pundits found for this tournament yet.')).toBeVisible();
 

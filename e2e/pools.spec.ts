@@ -5,6 +5,7 @@
 import { test, expect } from '@playwright/test';
 import { createTestPool, deletePool } from './helpers/firestore';
 import { TEST_USER, SEASON_ID } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 // The auth.setup.ts saves the uid as part of the storageState. We need to
 // know the uid to create REST fixtures for the test user. We derive it from
@@ -28,7 +29,7 @@ async function getCurrentUid(page: import('@playwright/test').Page): Promise<str
 test.describe('Pools list page', () => {
   test('shows empty state when user has no pools', async ({ page }) => {
     await page.goto('/pools');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'My Pools' })).toBeVisible();
 
     // The empty state text
     await expect(page.getByText(/haven't joined any pools/i)).toBeVisible();
@@ -38,14 +39,14 @@ test.describe('Pools list page', () => {
 
   test('shows pool card after a pool has been created', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
 
     const { poolId } = await createTestPool(uid, TEST_USER.displayName, 'Listed Pool', SEASON_ID);
 
     try {
       await page.goto('/pools');
-      await page.waitForLoadState('networkidle');
+      await expect(page.getByRole('heading', { name: 'My Pools' })).toBeVisible();
 
       await expect(page.getByText('Listed Pool')).toBeVisible();
     } finally {
@@ -55,14 +56,14 @@ test.describe('Pools list page', () => {
 
   test('"Create Pool" button navigates to /pools/create', async ({ page }) => {
     await page.goto('/pools');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'My Pools' })).toBeVisible();
     await page.getByRole('button', { name: /create pool/i }).first().click();
     await expect(page).toHaveURL('/pools/create');
   });
 
   test('"Join Pool" button navigates to /pools/join', async ({ page }) => {
     await page.goto('/pools');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'My Pools' })).toBeVisible();
     await page.getByRole('button', { name: /join pool/i }).first().click();
     await expect(page).toHaveURL('/pools/join');
   });
@@ -71,7 +72,7 @@ test.describe('Pools list page', () => {
 test.describe('Create Pool page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/pools/create');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: /create a new pool/i })).toBeVisible();
   });
 
   test('renders the form correctly', async ({ page }) => {
@@ -101,14 +102,14 @@ test.describe('Create Pool page', () => {
     await expect(page.getByRole('heading', { name: poolName })).toBeVisible();
 
     // Join code should be visible
-    await expect(page.getByText(/join code/i)).toBeVisible();
+    await expect(page.getByText('Join Code:')).toBeVisible();
   });
 });
 
 test.describe('Join Pool page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/pools/join');
-    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: /join a pool/i })).toBeVisible();
   });
 
   test('renders the form correctly', async ({ page }) => {
@@ -146,7 +147,7 @@ test.describe('Join Pool page', () => {
 
   test('successfully joins a pool and redirects to pool detail', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
 
     // Create a second "other user's" pool that the test user hasn't joined
@@ -155,7 +156,7 @@ test.describe('Join Pool page', () => {
 
     try {
       await page.goto('/pools/join');
-      await page.waitForLoadState('networkidle');
+      await expect(page.getByRole('heading', { name: /join a pool/i })).toBeVisible();
 
       await page.getByLabel(/join code/i).fill(joinCode);
       await page.getByRole('button', { name: /join pool/i }).click();
@@ -169,7 +170,7 @@ test.describe('Join Pool page', () => {
 
   test('shows error when trying to join a pool the user is already in', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
 
     // Create a pool WHERE this user is already a member
@@ -177,7 +178,7 @@ test.describe('Join Pool page', () => {
 
     try {
       await page.goto('/pools/join');
-      await page.waitForLoadState('networkidle');
+      await expect(page.getByRole('heading', { name: /join a pool/i })).toBeVisible();
 
       await page.getByLabel(/join code/i).fill(joinCode);
       await page.getByRole('button', { name: /join pool/i }).click();

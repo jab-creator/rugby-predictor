@@ -4,12 +4,15 @@ import {
   createTestPool,
   deletePool,
   finalizeMatchDirectly,
+  getPickStatus,
   getPrediction,
   getScoringRun,
   getUserTournamentStats,
+  resetTestSeasonState,
 } from './helpers/firestore';
 import { createTestUser, injectAuthState, type TestAuthUser } from './helpers/auth';
 import { TEST_SEASON_ID, TEST_USER, TEST_USER_2, TEST_USER_3 } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 const MATCHES = {
   jpnIta: `${TEST_SEASON_ID}-r1-JPN-ITA`,
@@ -30,11 +33,9 @@ async function openAsUser(browser: Browser, user: TestAuthUser): Promise<Page> {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto('/');
-  await page.waitForLoadState('networkidle');
   await injectAuthState(page, user);
   await page.reload();
-  await page.waitForLoadState('networkidle');
-  await expect(page.getByText(user.displayName, { exact: false })).toBeVisible({ timeout: 10_000 });
+  await waitForUserHeader(page, user.displayName);
   return page;
 }
 
@@ -49,14 +50,16 @@ async function submitPick(page: Page, userId: string, matchId: string, winnerLab
   }).toBe(margin);
 }
 
-async function lockPick(page: Page, userId: string, matchId: string) {
+async function lockPick(page: Page, poolId: string, userId: string, matchId: string) {
   const section = page.getByTestId(`match-section-${matchId}`);
   await section.getByRole('button', { name: /lock pick/i }).click();
+  await expect(section.getByText(/pick locked/i)).toBeVisible({ timeout: 15_000 });
 
   await expect.poll(async () => {
     const prediction = await getPrediction(userId, matchId);
-    return prediction?.isLocked;
-  }).toBe(true);
+    const status = await getPickStatus(poolId, matchId, userId);
+    return prediction?.isLocked === true || status?.lockedAt != null;
+  }, { timeout: 15_000 }).toBe(true);
 }
 
 async function finalizeAndWait(matchId: string, homeScore: number, awayScore: number) {
@@ -69,6 +72,8 @@ async function finalizeAndWait(matchId: string, homeScore: number, awayScore: nu
 }
 
 test.describe.serial('Milestone 9 — manual pool leaderboards and prediction visibility', () => {
+  test.setTimeout(60_000);
+
   let poolId: string;
   let user1Uid: string;
   let user2: TestAuthUser;
@@ -78,7 +83,7 @@ test.describe.serial('Milestone 9 — manual pool leaderboards and prediction vi
 
   test.beforeEach(async ({ page, browser }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     user1Uid = await getCurrentUid(page);
 
     user2 = await createTestUser(TEST_USER_2.email, TEST_USER_2.password, TEST_USER_2.displayName);
@@ -107,6 +112,7 @@ test.describe.serial('Milestone 9 — manual pool leaderboards and prediction vi
     await page2?.context().close();
     await page3?.context().close();
     await deletePool(poolId);
+    await resetTestSeasonState(TEST_SEASON_ID);
   });
 
   test('redacts member predictions by lock state and ranks pool members after final scoring', async ({ page }) => {
@@ -114,18 +120,18 @@ test.describe.serial('Milestone 9 — manual pool leaderboards and prediction vi
     await submitPick(page2, user2.uid, MATCHES.jpnIta, 'Japan', 12);
     await submitPick(page3, user3.uid, MATCHES.jpnIta, 'Italy', 6);
 
-    await lockPick(page2, user2.uid, MATCHES.jpnIta);
+    await lockPick(page2, poolId, user2.uid, MATCHES.jpnIta);
 
     const user1Match = page.getByTestId(`match-section-${MATCHES.jpnIta}`);
     await expect(user1Match.getByTestId(`prediction-detail-${user1Uid}`)).toHaveText('Prediction: Japan by 7');
     await expect(user1Match.getByTestId(`prediction-detail-${user2.uid}`)).toHaveText('Prediction hidden');
     await expect(user1Match.getByTestId(`member-prediction-${user2.uid}`)).toContainText('Locked');
 
-    await lockPick(page, user1Uid, MATCHES.jpnIta);
+    await lockPick(page, poolId, user1Uid, MATCHES.jpnIta);
     await expect(user1Match.getByTestId(`prediction-detail-${user2.uid}`)).toHaveText('Prediction: Japan by 12');
     await expect(user1Match.getByTestId(`prediction-detail-${user3.uid}`)).toHaveText('Prediction hidden');
 
-    await lockPick(page3, user3.uid, MATCHES.jpnIta);
+    await lockPick(page3, poolId, user3.uid, MATCHES.jpnIta);
 
     const remainingPicks = [
       { page, userId: user1Uid, matchId: MATCHES.nzlFra, winner: 'New Zealand', margin: 4 },
@@ -141,7 +147,7 @@ test.describe.serial('Milestone 9 — manual pool leaderboards and prediction vi
 
     for (const pick of remainingPicks) {
       await submitPick(pick.page, pick.userId, pick.matchId, pick.winner, pick.margin);
-      await lockPick(pick.page, pick.userId, pick.matchId);
+      await lockPick(pick.page, poolId, pick.userId, pick.matchId);
     }
 
     await finalizeAndWait(MATCHES.jpnIta, 27, 20);

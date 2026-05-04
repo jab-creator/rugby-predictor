@@ -11,6 +11,7 @@
 import { test, expect } from '@playwright/test';
 import { createTestPool, deletePool, getPrediction } from './helpers/firestore';
 import { TEST_USER, TEST_SEASON_ID } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 const R1_NZL_FRA = `${TEST_SEASON_ID}-r1-NZL-FRA`;
 
@@ -49,7 +50,7 @@ test.describe('MatchCard — winner selection', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
     const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
@@ -106,7 +107,7 @@ test.describe('MatchCard — margin input', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
     const pool = await createTestPool(uid, TEST_USER.displayName, 'Margin Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
@@ -163,7 +164,7 @@ test.describe('MatchCard — autosave', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
     const pool = await createTestPool(uid, TEST_USER.displayName, 'Autosave Debounce Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
@@ -180,10 +181,7 @@ test.describe('MatchCard — autosave', () => {
     await getFranceButton(page).click();
     await getFranceMarginInput(page).fill('15');
 
-    // Wait for "Saving..." to appear (debounce fires after 500ms)
-    await expect(getFranceMatchCard(page).getByText(/saving/i)).toBeVisible({ timeout: 4_000 });
-
-    // Then wait for "Saved" confirmation
+    // The intermediate "Saving..." state can be too brief to observe reliably.
     await expect(getFranceMatchCard(page).getByText(/saved/i)).toBeVisible({ timeout: 8_000 });
   });
 

@@ -23,6 +23,7 @@ import {
   FUNCTIONS_EMULATOR_URL,
   PROJECT_ID,
 } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 // Deterministic Round 1 fixture IDs used by the test helpers below.
 const R1_NZL_FRA = `${TEST_SEASON_ID}-r1-NZL-FRA`;
@@ -95,7 +96,7 @@ test.describe('Lock button visibility', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Lock Visibility Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
@@ -133,7 +134,7 @@ test.describe('Locked state UI', () => {
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Locked UI Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
@@ -183,7 +184,7 @@ test.describe('Lock persistence', () => {
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Lock Persist Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
@@ -232,7 +233,7 @@ test.describe('Bulk lock button', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     const uid = await getCurrentUid(page);
     ({ poolId } = await createTestPool(uid, TEST_USER.displayName, 'Bulk Lock Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
@@ -278,7 +279,7 @@ test.describe('lastLockedPredictionAt tracking', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     userId = await getCurrentUid(page);
     ({ poolId } = await createTestPool(userId, TEST_USER.displayName, 'Lock Timestamp Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);
@@ -343,7 +344,7 @@ test.describe('autoLockMatch endpoint', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     userId = await getCurrentUid(page);
     ({ poolId } = await createTestPool(userId, TEST_USER.displayName, 'AutoLock Pool', TEST_SEASON_ID));
     await page.goto(`/pools/${poolId}/round/1`);

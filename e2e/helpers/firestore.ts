@@ -265,11 +265,37 @@ export async function setUserTournamentStatsDoc(
   await getAdminDb().doc(`user_tournament_stats/${tournamentId}_${userId}`).set(data, { merge: true });
 }
 
+export async function deleteUserTournamentStatsDoc(
+  tournamentId: string,
+  userId: string,
+): Promise<void> {
+  await getAdminDb().doc(`user_tournament_stats/${tournamentId}_${userId}`).delete();
+}
+
 export async function setSeasonLeaderboardConfig(
   seasonId: string,
   leaderboardConfig: Record<string, boolean>,
 ): Promise<void> {
   await getAdminDb().doc(`seasons/${seasonId}`).set({ leaderboardConfig }, { merge: true });
+}
+
+export async function deleteScoringRun(tournamentId: string, matchId: string): Promise<void> {
+  const adminDb = getAdminDb();
+  await Promise.all([
+    adminDb.doc(`scoring_runs/${getScoringRunDocId(tournamentId, matchId)}`).delete(),
+    adminDb.doc(`scoring_runs/${matchId}`).delete(),
+  ]);
+}
+
+export async function resetTestSeasonState(seasonId: string = 'nations-championship-test'): Promise<void> {
+  let matchIds = await firestoreList(`seasons/${seasonId}/matches`);
+  await seedTestSeason(seasonId);
+
+  if (matchIds.length === 0) {
+    matchIds = await firestoreList(`seasons/${seasonId}/matches`);
+  }
+
+  await Promise.all(matchIds.map((matchId) => deleteScoringRun(seasonId, matchId)));
 }
 
 /**

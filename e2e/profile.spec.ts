@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+  deleteUserTournamentStatsDoc,
   getUserProfileDoc,
   getUserTournamentStats,
   setUserTournamentStatsDoc,
@@ -19,11 +20,21 @@ async function getCurrentUid(page: import('@playwright/test').Page): Promise<str
 }
 
 test.describe('Profile page', () => {
+  let statsUserId: string | null = null;
+
+  test.afterEach(async () => {
+    if (statsUserId) {
+      await deleteUserTournamentStatsDoc(TEST_SEASON_ID, statsUserId);
+      statsUserId = null;
+    }
+  });
+
   test('saves country and syncs tournament-specific resolved hemisphere to stats', async ({ page }) => {
     await page.goto('/profile');
     await expect(page.getByRole('heading', { name: /profile/i })).toBeVisible();
 
     const uid = await getCurrentUid(page);
+    statsUserId = uid;
     await setUserTournamentStatsDoc(TEST_SEASON_ID, uid, {
       id: `${TEST_SEASON_ID}_${uid}`,
       userId: uid,
