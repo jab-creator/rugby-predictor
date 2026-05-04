@@ -199,6 +199,19 @@ export async function addPoolMember(
 }
 
 /**
+ * Remove a single member doc from a pool's members subcollection.
+ * Used by tests that need to seed a deliberately-empty pool leaderboard.
+ */
+export async function removePoolMember(poolId: string, userId: string): Promise<void> {
+  await getAdminDb().doc(`pools/${poolId}/members/${userId}`).delete();
+  const pool = await firestoreGet(`pools/${poolId}`);
+  if (pool) {
+    const current = typeof pool.membersCount === 'number' ? pool.membersCount : 1;
+    await firestoreSet(`pools/${poolId}`, { ...pool, membersCount: Math.max(0, current - 1) });
+  }
+}
+
+/**
  * Delete a pool and all its subcollections.
  * Also clears any universal predictions for the pool's members in that season so
  * E2E tests remain isolated now that predictions are no longer pool-scoped.

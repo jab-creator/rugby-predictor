@@ -194,7 +194,10 @@ export default function PoolLeaderboardPage() {
         ) : error ? (
           <p className="text-red-600 dark:text-red-400">{error}</p>
         ) : entries.length === 0 ? (
-          <div className="border border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-8 text-center text-gray-600 dark:text-gray-300">
+          <div
+            data-testid="leaderboard-empty"
+            className="border border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-8 text-center text-gray-600 dark:text-gray-300"
+          >
             {emptyMessage}
           </div>
         ) : (
@@ -212,7 +215,11 @@ export default function PoolLeaderboardPage() {
               </thead>
               <tbody>
                 {entries.map((entry) => (
-                  <tr key={entry.userId} className="border-b border-gray-200 dark:border-gray-800">
+                  <tr
+                    key={entry.userId}
+                    data-testid={`leaderboard-row-${entry.userId}`}
+                    className="border-b border-gray-200 dark:border-gray-800"
+                  >
                     <td className="py-2">{entry.rank}</td>
                     <td className="py-2">{entry.displayName}</td>
                     <td className="py-2 text-right">{entry.totalPoints}</td>
