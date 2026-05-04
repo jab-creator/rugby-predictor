@@ -409,3 +409,86 @@ E2E expects:
 - **Full platform:** Through Milestone 12 (knockout stages)
 - **Viral growth:** Milestone 13-14 (sharing and badges)
 - **Production:** Milestone 15
+
+## Future Feature: League of Pools and Official Comparison Views
+
+### Decision
+Split pool-vs-pool competition into two related but separate concepts:
+
+1. League of Pools
+   - User-created pool-vs-pool competition.
+   - Designed for small/medium private pools.
+   - Pool captains join using a code.
+   - Duplicate users across pools are allowed and treated as a social/admin issue.
+   - Uses fixed-N metrics such as Top 3 Average, Top 5 Average, and Top 10 Average.
+
+2. Official Comparison Views
+   - Admin/platform-created tournament analytics.
+   - Designed for large public segments such as North vs South and Country vs Country.
+   - Uses percentage-based metrics such as Top 10% Average and Top 25% Average.
+
+### League of Pools
+Creators can choose a default ranking view:
+- Top 3 Average
+- Top 5 Average
+- Top 10 Average
+- Average Active Users
+- Median Active Users
+
+The UI should also allow viewers to switch between these metric views.
+
+Ranking chain for the selected metric:
+1. selectedMetric DESC
+2. completionRate DESC
+3. medianActivePoints DESC
+4. avgActivePoints DESC
+5. bestUserPoints DESC
+
+Minimum active user count should be configurable:
+- `minActiveUsers`
+- `belowMinimumBehavior`: `show_provisional`, `hide`, or `rank_with_warning`
+
+Default likely:
+- `minActiveUsers: 3`
+- `belowMinimumBehavior: show_provisional`
+
+Inactive users:
+- Excluded from average/median/top-N calculations.
+- Included in completion rate calculations.
+
+### Official Comparison Views for Nations Championship
+Required official views:
+- North vs South
+- Country leaderboard
+- Country vs Country comparison
+
+Official segment metrics:
+- totalUsers
+- activeUsers
+- completionRate
+- avgActivePoints
+- medianActivePoints
+- top10PercentAvgPoints
+- top25PercentAvgPoints
+- bestUserPoints
+- percentileBuckets
+
+Country leaderboard:
+- Shows all countries ranked by selected metric.
+- Default ranking should likely be `top10PercentAvgPoints`.
+- UI can switch between Top 10%, Top 25%, Average, Median, Completion Rate, and Best User.
+
+Country vs Country:
+- User selects one country on the left and one country on the right.
+- UI compares all official segment metrics side-by-side.
+
+North vs South:
+- Side-by-side comparison using official hemisphere segment stats.
+- Should use percentage-based metrics, not fixed Top 3/5/10 metrics.
+
+### Core constraints
+- No pool-specific scoring.
+- User scores remain universal.
+- Pool/country/hemisphere comparisons use summary stats derived from universal user scores.
+- League of Pools compares manually joined pools.
+- Official Comparison Views compare automatically derived platform segments.
