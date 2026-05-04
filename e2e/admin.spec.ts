@@ -1,19 +1,30 @@
 import { expect, test } from '@playwright/test';
 import { createTestUser } from './helpers/auth';
 import {
+  deleteUserTournamentStatsDoc,
   getUserProfileDoc,
   getUserTournamentStats,
   setUserTournamentStatsDoc,
 } from './helpers/firestore';
 import { TEST_SEASON_ID, TEST_USER_2 } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 test.describe('Pundit admin page', () => {
+  let targetUserId: string | null = null;
+
+  test.afterEach(async () => {
+    if (targetUserId) {
+      await deleteUserTournamentStatsDoc(TEST_SEASON_ID, targetUserId);
+    }
+  });
+
   test('configured admins can flag and unflag pundits and sync stats', async ({ page }) => {
     const targetUser = await createTestUser(
       TEST_USER_2.email,
       TEST_USER_2.password,
       TEST_USER_2.displayName,
     );
+    targetUserId = targetUser.uid;
 
     await setUserTournamentStatsDoc(TEST_SEASON_ID, targetUser.uid, {
       id: `${TEST_SEASON_ID}_${targetUser.uid}`,
@@ -30,7 +41,8 @@ test.describe('Pundit admin page', () => {
     });
 
     await page.goto('/admin/pundits');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
+    await expect(page.getByRole('heading', { name: /pundit admin/i })).toBeVisible();
 
     await page.getByLabel(/target user email/i).fill(TEST_USER_2.email);
     await page.getByRole('button', { name: /save pundit status/i }).click();

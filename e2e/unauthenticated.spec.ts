@@ -4,11 +4,12 @@
  */
 
 import { test, expect } from '@playwright/test';
+import { waitForPublicHome } from './helpers/waits';
 
 test.describe('Unauthenticated — home page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForPublicHome(page);
   });
 
   test('shows the Nations Championship Predictor heading', async ({ page }) => {

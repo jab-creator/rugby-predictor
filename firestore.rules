@@ -128,14 +128,16 @@ service cloud.firestore {
     }
 
     function userProfileCountryCodeIsValid() {
-      return request.resource.data.countryCode == null || (
+      return !request.resource.data.keys().hasAny(['countryCode']) ||
+      request.resource.data.countryCode == null || (
         request.resource.data.countryCode is string &&
         request.resource.data.countryCode.matches('^[A-Z]{2}$')
       );
     }
 
     function userProfileHemisphereIsValid() {
-      return request.resource.data.hemisphere == null || (
+      return !request.resource.data.keys().hasAny(['hemisphere']) ||
+      request.resource.data.hemisphere == null || (
         request.resource.data.hemisphere in ['north', 'south']
       );
     }

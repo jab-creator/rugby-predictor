@@ -4,11 +4,12 @@
 
 import { test, expect } from '@playwright/test';
 import { TEST_USER } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 test.describe('Authenticated home page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
   });
 
   test('shows the three CTA buttons', async ({ page }) => {
@@ -44,7 +45,7 @@ test.describe('Authenticated home page', () => {
 test.describe('Header navigation', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
   });
 
   test('"My Pools" header link navigates to /pools', async ({ page }) => {

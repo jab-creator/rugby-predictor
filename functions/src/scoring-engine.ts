@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import { Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { AggregateStatsState, applyScoreToAggregateStats, scorePrediction } from './scoring';
 import { resolveTournamentUserAttributes, type TournamentDoc } from './tournament-user-attributes';
 
@@ -163,10 +163,10 @@ function buildUserTournamentStatsProfilePatch(params: {
 
   return {
     displayName: resolved.displayName,
-    photoURL: resolved.photoURL ?? admin.firestore.FieldValue.delete(),
-    countryCode: resolved.countryCode ?? admin.firestore.FieldValue.delete(),
-    resolvedHemisphere: resolved.resolvedHemisphere ?? admin.firestore.FieldValue.delete(),
-    hemisphere: admin.firestore.FieldValue.delete(),
+    photoURL: resolved.photoURL ?? FieldValue.delete(),
+    countryCode: resolved.countryCode ?? FieldValue.delete(),
+    resolvedHemisphere: resolved.resolvedHemisphere ?? FieldValue.delete(),
+    hemisphere: FieldValue.delete(),
     isPundit: resolved.isPundit,
     updatedAt: now,
   };

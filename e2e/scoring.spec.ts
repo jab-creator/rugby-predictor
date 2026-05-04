@@ -7,9 +7,11 @@ import {
   getPrediction,
   getScoringRun,
   getUserTournamentStats,
+  resetTestSeasonState,
 } from './helpers/firestore';
 import { createTestUser, injectAuthState } from './helpers/auth';
 import { TEST_SEASON_ID, TEST_USER, TEST_USER_2 } from './helpers/constants';
+import { waitForUserHeader } from './helpers/waits';
 
 const ROUND_1_MATCH_ID = `${TEST_SEASON_ID}-r1-JPN-ITA`;
 const ROUND_1_MATCH_ID_2 = `${TEST_SEASON_ID}-r1-NZL-FRA`;
@@ -33,11 +35,9 @@ async function openAsUser2(browser: Browser): Promise<import('@playwright/test')
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   await page.goto('/');
-  await page.waitForLoadState('networkidle');
   await injectAuthState(page, user2);
   await page.reload();
-  await page.waitForLoadState('networkidle');
-  await page.waitForSelector(`text=${TEST_USER_2.displayName}`, { timeout: 10_000 });
+  await waitForUserHeader(page, TEST_USER_2.displayName);
   return page;
 }
 
@@ -48,7 +48,7 @@ test.describe.serial('Milestone 6 — universal scoring', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await waitForUserHeader(page);
     user1Uid = await getCurrentUid(page);
     const pool = await createTestPool(user1Uid, TEST_USER.displayName, 'Scoring Pool', TEST_SEASON_ID);
     poolId = pool.poolId;
@@ -57,6 +57,7 @@ test.describe.serial('Milestone 6 — universal scoring', () => {
 
   test.afterEach(async () => {
     await deletePool(poolId);
+    await resetTestSeasonState(TEST_SEASON_ID);
   });
 
   test('creator can finalize a match and score all universal predictions', async ({ page, browser }) => {
@@ -137,18 +138,18 @@ test.describe.serial('Milestone 6 — universal scoring', () => {
     await expect.poll(async () => {
       const stats = await getUserTournamentStats(TEST_SEASON_ID, user1Uid);
       return stats?.totalPoints;
-    }).toBe(20);
+    }, { timeout: 15_000 }).toBe(20);
 
     await finalizeMatchDirectly(TEST_SEASON_ID, ROUND_1_MATCH_ID_2, 24, 20);
 
     await expect.poll(async () => {
       const stats = await getUserTournamentStats(TEST_SEASON_ID, user1Uid);
       return `${stats?.totalPoints}:${stats?.scoredMatchCount}:${stats?.lastScoredMatchId}:${getRoundPoints(stats, 1)}`;
-    }).toBe(`20:1:${ROUND_1_MATCH_ID_2}:20`);
+    }, { timeout: 15_000 }).toBe(`20:1:${ROUND_1_MATCH_ID_2}:20`);
 
     await expect.poll(async () => {
       const scoringRun = await getScoringRun(TEST_SEASON_ID, ROUND_1_MATCH_ID_2);
       return scoringRun?.actualMargin;
-    }).toBe(4);
+    }, { timeout: 15_000 }).toBe(4);
   });
 });

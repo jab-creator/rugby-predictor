@@ -4,8 +4,10 @@ export const FIRESTORE_EMULATOR_URL = 'http://localhost:8080';
 export const FUNCTIONS_EMULATOR_URL = 'http://localhost:5001';
 export const APP_URL = 'http://localhost:3000';
 
-// The Auth Emulator accepts any value for the API key
-export const FAKE_API_KEY = 'fake-api-key';
+// The Auth Emulator accepts any value for the API key. Keep this aligned with
+// .env.local so injected Firebase Auth state uses the same localStorage key
+// the app's Firebase SDK reads on startup.
+export const FAKE_API_KEY = 'fake-api-key-for-emulator';
 
 // This must match NEXT_PUBLIC_FIREBASE_API_KEY in .env.local
 // For the emulator, this is typically the same fake key
@@ -34,6 +36,14 @@ export const TEST_USER_2 = {
   photoURL: '',
 };
 
+export const TEST_USER_3 = {
+  email: 'playwright-test-3@example.com',
+  password: 'playwright-test-password-789',
+  displayName: 'Third User',
+  photoURL: '',
+};
+
 // Path to saved auth storage state
 export const AUTH_FILE = 'e2e/.auth/user.json';
 export const AUTH_FILE_2 = 'e2e/.auth/user2.json';
+export const AUTH_FILE_3 = 'e2e/.auth/user3.json';
