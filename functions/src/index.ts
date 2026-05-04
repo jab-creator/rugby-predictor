@@ -897,7 +897,7 @@ export const finalizeMatch = functions.https.onCall(async (data, context) => {
   const legacyScoringRunRef = db.collection('scoring_runs').doc(getLegacyScoringRunDocId(matchId));
   const now = Timestamp.now();
 
-  const finalizedMatch = await db.runTransaction(async (tx) => {
+  const { finalizedMatch, wasAlreadyFinal } = await db.runTransaction(async (tx) => {
     const matchSnap = await tx.get(matchRef);
     if (!matchSnap.exists) {
       throw new functions.https.HttpsError('not-found', 'Match not found');
@@ -938,11 +938,17 @@ export const finalizeMatch = functions.https.onCall(async (data, context) => {
         );
       }
 
-      return requestedFinalMatch;
+      return {
+        finalizedMatch: requestedFinalMatch,
+        wasAlreadyFinal: true,
+      };
     }
 
     tx.set(matchRef, requestedFinalMatch, { merge: true });
-    return requestedFinalMatch;
+    return {
+      finalizedMatch: requestedFinalMatch,
+      wasAlreadyFinal: sameFinalResult,
+    };
   });
 
   const scoringResult = await scoreFinalizedMatch({
@@ -953,6 +959,10 @@ export const finalizeMatch = functions.https.onCall(async (data, context) => {
     now,
   });
 
+  const scoredByThisRequest =
+    scoringResult.scored ||
+    (!wasAlreadyFinal && scoringResult.skipped && scoringResult.reason === 'already-scored');
+
   return {
     seasonId,
     matchId,
@@ -960,8 +970,8 @@ export const finalizeMatch = functions.https.onCall(async (data, context) => {
     awayScore,
     actualWinner: finalizedMatch.actualWinner ?? null,
     actualMargin: finalizedMatch.actualMargin ?? 0,
-    scored: scoringResult.scored,
-    skipped: scoringResult.skipped,
+    scored: scoredByThisRequest,
+    skipped: scoredByThisRequest ? false : scoringResult.skipped,
   };
 });
 

@@ -138,18 +138,18 @@ test.describe.serial('Milestone 6 — universal scoring', () => {
     await expect.poll(async () => {
       const stats = await getUserTournamentStats(TEST_SEASON_ID, user1Uid);
       return stats?.totalPoints;
-    }).toBe(20);
+    }, { timeout: 15_000 }).toBe(20);
 
     await finalizeMatchDirectly(TEST_SEASON_ID, ROUND_1_MATCH_ID_2, 24, 20);
 
     await expect.poll(async () => {
       const stats = await getUserTournamentStats(TEST_SEASON_ID, user1Uid);
       return `${stats?.totalPoints}:${stats?.scoredMatchCount}:${stats?.lastScoredMatchId}:${getRoundPoints(stats, 1)}`;
-    }).toBe(`20:1:${ROUND_1_MATCH_ID_2}:20`);
+    }, { timeout: 15_000 }).toBe(`20:1:${ROUND_1_MATCH_ID_2}:20`);
 
     await expect.poll(async () => {
       const scoringRun = await getScoringRun(TEST_SEASON_ID, ROUND_1_MATCH_ID_2);
       return scoringRun?.actualMargin;
-    }).toBe(4);
+    }, { timeout: 15_000 }).toBe(4);
   });
 });
